@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react';
+import { fetchRealTrainDetails } from '../services/rapidRailService';
 import {
     Train,
     Users,
@@ -81,6 +83,27 @@ function ActivityItem({ icon: Icon, title, sub, time, iconColor }) {
 
 // ── Dashboard Page ────────────────────────────────────────────
 export default function Dashboard() {
+    // Example train number and date
+    const [trainDetails, setTrainDetails] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        const trainNumber = '12345'; // Replace with actual train number or user input
+        const date = '2026-02-21'; // Use current date or user input
+        setLoading(true);
+        fetchRealTrainDetails(trainNumber, date)
+            .then(data => {
+                setTrainDetails(data);
+                setError(null);
+            })
+            .catch(err => {
+                setError(err.message);
+                setTrainDetails(null);
+            })
+            .finally(() => setLoading(false));
+    }, []);
+
     return (
         <div className="space-y-6">
             {/* ── Page Header ── */}
@@ -96,8 +119,8 @@ export default function Dashboard() {
                 <StatCard
                     icon={Train}
                     label="Trains Tracked"
-                    value="0"
-                    sub="Updated just now"
+                    value={trainDetails ? trainDetails.train_number : (loading ? 'Loading...' : '0')}
+                    sub={trainDetails ? `Status: ${trainDetails.status}` : (error ? error : 'Updated just now')}
                     iconColor="text-[#2F80ED]"
                     bgColor="bg-[#2F80ED]/10"
                 />
@@ -127,7 +150,30 @@ export default function Dashboard() {
                 />
             </div>
 
-            {/* ── Quick Actions ── */}
+            {/* ── Real Train Details ── */}
+            <div className="bg-[#161B22] border border-[#21262D] rounded-xl p-5 mb-4">
+                <h2 className="text-base font-semibold text-[#F0F6FC] mb-2">Live Train Details</h2>
+                {loading && <p className="text-[#8B949E]">Loading train details...</p>}
+                {error && <p className="text-[#EF4444]">{error}</p>}
+                {trainDetails && (
+                    <div className="space-y-2">
+                        <div className="text-[#F0F6FC] font-medium">Train Number: {trainDetails.train_number}</div>
+                        <div className="text-[#8B949E]">Status: {trainDetails.status}</div>
+                        <div className="text-[#8B949E]">Current Station: {trainDetails.current_station}</div>
+                        <div className="text-[#8B949E]">Last Updated: {trainDetails.last_updated}</div>
+                        <div>
+                            <h3 className="text-sm text-[#F0F6FC] font-semibold mt-2 mb-1">Route:</h3>
+                            <ul className="text-xs text-[#8B949E]">
+                                {trainDetails.route && trainDetails.route.map((stop, idx) => (
+                                    <li key={idx}>
+                                        {stop.station}: Arrival {stop.arrival}, Departure {stop.departure}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                )}
+            </div>
             <div className="bg-[#161B22] border border-[#21262D] rounded-xl p-5">
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-base font-semibold text-[#F0F6FC]">Quick Actions</h2>

@@ -33,7 +33,7 @@ function boardingStatus(ratio) {
     if (ratio < 0.40) return 'Board Now'
     if (ratio < 0.65) return 'Comfortable'
     if (ratio < 0.80) return 'Filling Up'
-    if (ratio < 0.90) return 'Almost Full'
+    if (ratio < 0.85) return 'Almost Full'
     if (ratio < 1.00) return 'Avoid'
     return 'Overcrowded'
 }
@@ -137,7 +137,7 @@ function rowToCompartment(row) {
 export async function fetchTrainCrowdData(trainNumber) {
     const query = `
 from(bucket: "${BUCKET}")
-  |> range(start: -1h)
+  |> range(start: -24h)
   |> filter(fn: (r) => r["_measurement"] == "crowd_data")
   |> filter(fn: (r) => r["train"] == "${trainNumber}")
   |> filter(fn: (r) => r["_field"] == "people")
@@ -166,7 +166,7 @@ from(bucket: "${BUCKET}")
 export async function fetchStationCrowdData(stationCode) {
     const query = `
 from(bucket: "${BUCKET}")
-  |> range(start: -1h)
+  |> range(start: -24h)
   |> filter(fn: (r) => r["_measurement"] == "crowd_data")
   |> filter(fn: (r) => r["location"] == "${stationCode}")
   |> filter(fn: (r) => r["_field"] == "people")
@@ -197,7 +197,7 @@ from(bucket: "${BUCKET}")
 export async function fetchLatestCrowdData() {
     const query = `
 from(bucket: "${BUCKET}")
-  |> range(start: -1h)
+  |> range(start: -24h)
   |> filter(fn: (r) => r["_measurement"] == "crowd_data")
   |> filter(fn: (r) => r["_field"] == "people")
   |> last()
@@ -252,7 +252,7 @@ from(bucket: "${BUCKET}")
 export async function fetchAvailableTrains() {
     const query = `
 from(bucket: "${BUCKET}")
-  |> range(start: -1h)
+  |> range(start: -24h)
   |> filter(fn: (r) => r["_measurement"] == "crowd_data")
   |> filter(fn: (r) => r["_field"] == "people")
   |> last()

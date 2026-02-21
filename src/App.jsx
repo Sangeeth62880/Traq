@@ -3,12 +3,13 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { SensorProvider } from './context/SensorContext'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
-import SearchTrain from './pages/SearchTrain'
+import BookTicket from './pages/BookTicket'
+import GeneralTicket from './pages/GeneralTicket'
 import LiveTracker from './pages/LiveTracker'
 import CrowdMonitor from './pages/CrowdMonitor'
 import RailwayCard from './pages/RailwayCard'
 import RechargeCard from './pages/RechargeCard'
-import BookTicket from './pages/BookTicket'
+import SearchTrain from './pages/SearchTrain'
 import Settings from './pages/Settings'
 
 export default function App() {
@@ -23,7 +24,7 @@ export default function App() {
                         <Route path="crowd" element={<CrowdMonitor />} />
                         <Route path="card" element={<RailwayCard />} />
                         <Route path="recharge" element={<RechargeCard />} />
-                        <Route path="book" element={<BookTicket />} />
+                        <Route path="book" element={<GeneralTicket />} />
                         <Route path="settings" element={<Settings />} />
                     </Route>
                 </Routes>

@@ -4,99 +4,38 @@ import { useNavigate } from 'react-router-dom'
 import {
     Search, ArrowRight, ArrowLeftRight, Train, Clock,
     Users, ChevronRight, Wifi, WifiOff, AlertTriangle,
-    CheckCircle, ExternalLink, RefreshCw, MapPin, Calendar,
+    CheckCircle, ExternalLink, RefreshCw, MapPin, Calendar, Loader2, Ticket,
 } from 'lucide-react'
 import { useSensor } from '../context/SensorContext'
 import { mockTrains } from '../data/mockTrains'
 import { sensorData } from '../data/sensorData'
+import { searchStations as apiSearchStations, getTrainsBetween } from '../services/railRadarService'
 
-// ── Comprehensive Indian railway station list ─────────────────────────────────
-const STATIONS = [
-    { code: 'CSTM', name: 'Mumbai Chhatrapati Shivaji Maharaj Terminus', city: 'Mumbai' },
-    { code: 'BCT', name: 'Mumbai Central', city: 'Mumbai' },
-    { code: 'LTT', name: 'Mumbai Lokmanya Tilak Terminus', city: 'Mumbai' },
-    { code: 'DR', name: 'Dadar', city: 'Mumbai' },
-    { code: 'TNA', name: 'Thane', city: 'Thane' },
-    { code: 'PUNE', name: 'Pune Junction', city: 'Pune' },
-    { code: 'NDLS', name: 'New Delhi', city: 'Delhi' },
-    { code: 'DLI', name: 'Old Delhi Junction', city: 'Delhi' },
-    { code: 'NZM', name: 'Hazrat Nizamuddin', city: 'Delhi' },
-    { code: 'HWH', name: 'Howrah Junction', city: 'Kolkata' },
-    { code: 'SDAH', name: 'Sealdah', city: 'Kolkata' },
-    { code: 'MAS', name: 'Chennai Central', city: 'Chennai' },
-    { code: 'MS', name: 'Chennai Egmore', city: 'Chennai' },
-    { code: 'SBC', name: 'Bangalore City Junction', city: 'Bengaluru' },
-    { code: 'YPR', name: 'Yeshwanthpur Junction', city: 'Bengaluru' },
-    { code: 'SC', name: 'Secunderabad Junction', city: 'Hyderabad' },
-    { code: 'HYB', name: 'Hyderabad Deccan', city: 'Hyderabad' },
-    { code: 'ADI', name: 'Ahmedabad Junction', city: 'Ahmedabad' },
-    { code: 'ST', name: 'Surat', city: 'Surat' },
-    { code: 'BRC', name: 'Vadodara Junction', city: 'Vadodara' },
-    { code: 'JP', name: 'Jaipur Junction', city: 'Jaipur' },
-    { code: 'AGC', name: 'Agra Cantt', city: 'Agra' },
-    { code: 'LUCW', name: 'Lucknow', city: 'Lucknow' },
-    { code: 'CNB', name: 'Kanpur Central', city: 'Kanpur' },
-    { code: 'PNBE', name: 'Patna Junction', city: 'Patna' },
-    { code: 'NGP', name: 'Nagpur Junction', city: 'Nagpur' },
-    { code: 'BSB', name: 'Varanasi Junction', city: 'Varanasi' },
-    { code: 'GKP', name: 'Gorakhpur Junction', city: 'Gorakhpur' },
-    { code: 'BPL', name: 'Bhopal Junction', city: 'Bhopal' },
-    { code: 'ET', name: 'Itarsi Junction', city: 'Itarsi' },
-    { code: 'VSKP', name: 'Visakhapatnam', city: 'Visakhapatnam' },
-    { code: 'BZA', name: 'Vijayawada Junction', city: 'Vijayawada' },
-    { code: 'MDU', name: 'Madurai Junction', city: 'Madurai' },
-    { code: 'ERS', name: 'Ernakulam Junction', city: 'Kochi' },
-    { code: 'TVC', name: 'Thiruvananthapuram Central', city: 'Thiruvananthapuram' },
-    { code: 'CBE', name: 'Coimbatore Junction', city: 'Coimbatore' },
-    { code: 'SA', name: 'Salem Junction', city: 'Salem' },
-    { code: 'MYS', name: 'Mysuru Junction', city: 'Mysuru' },
-    { code: 'MAJN', name: 'Mangaluru Junction', city: 'Mangaluru' },
-    { code: 'UBL', name: 'Hubballi Junction', city: 'Hubballi' },
-    { code: 'GWL', name: 'Gwalior Junction', city: 'Gwalior' },
-    { code: 'JHS', name: 'Jhansi Junction', city: 'Jhansi' },
-    { code: 'KOTA', name: 'Kota Junction', city: 'Kota' },
-    { code: 'AII', name: 'Ajmer Junction', city: 'Ajmer' },
-    { code: 'JAT', name: 'Jammu Tawi', city: 'Jammu' },
-    { code: 'ASR', name: 'Amritsar Junction', city: 'Amritsar' },
-    { code: 'LDH', name: 'Ludhiana Junction', city: 'Ludhiana' },
-    { code: 'UMB', name: 'Ambala Cantt Junction', city: 'Ambala' },
-    { code: 'CDG', name: 'Chandigarh', city: 'Chandigarh' },
-    { code: 'GHY', name: 'Guwahati', city: 'Guwahati' },
-    { code: 'RNC', name: 'Ranchi', city: 'Ranchi' },
-    { code: 'DBRG', name: 'Dibrugarh', city: 'Dibrugarh' },
-    { code: 'MAO', name: 'Madgaon Junction', city: 'Goa' },
-    { code: 'THVM', name: 'Thiruvananthapuram', city: 'Kerala' },
-]
 
-// ── Filter stations from query ────────────────────────────────────────────────
-function filterStations(q) {
-    if (!q || q.length < 1) return []
-    const lower = q.toLowerCase()
-    return STATIONS.filter(s =>
-        s.code.toLowerCase().includes(lower) ||
-        s.name.toLowerCase().includes(lower) ||
-        s.city.toLowerCase().includes(lower)
-    ).slice(0, 7)
-}
 
 // ── Colour helpers ────────────────────────────────────────────────────────────
 function coachBg(ratio, offline) {
     if (offline) return { bg: '#374151', text: '#9CA3AF' }
     const p = ratio * 100
-    if (p > 90) return { bg: '#EF4444', text: '#fff' }
-    if (p > 80) return { bg: '#F97316', text: '#fff' }
-    if (p > 65) return { bg: '#FACC15', text: '#111' }
-    if (p > 40) return { bg: '#2F80ED', text: '#fff' }
-    return { bg: '#22C55E', text: '#111' }
+    if (p >= 80) return { bg: '#EF4444', text: '#fff' }
+    if (p >= 50) return { bg: '#F97316', text: '#fff' }
+    return { bg: '#22C55E', text: '#fff' }
 }
 function pctColor(pct) {
-    if (pct > 90) return 'text-[#EF4444]'
-    if (pct > 80) return 'text-[#F97316]'
-    if (pct > 65) return 'text-[#FACC15]'
-    if (pct > 40) return 'text-[#2F80ED]'
+    if (pct >= 80) return 'text-[#EF4444]'
+    if (pct >= 50) return 'text-[#F97316]'
     return 'text-[#22C55E]'
 }
 function secAgo(d) { return d ? Math.round((Date.now() - d.getTime()) / 1000) : null }
+
+function boardingStatus(ratio) {
+    if (ratio < 0.40) return 'Board Now'
+    if (ratio < 0.65) return 'Comfortable'
+    if (ratio < 0.80) return 'Filling Up'
+    if (ratio < 0.85) return 'Almost Full'
+    if (ratio < 1.00) return 'Avoid'
+    return 'Overcrowded'
+}
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 function Sk({ className = '', style }) {
@@ -108,6 +47,8 @@ function StationInput({ label, icon: Icon, value, onChange, placeholder }) {
     const [query, setQuery] = useState(value?.code ? `${value.name} (${value.code})` : '')
     const [open, setOpen] = useState(false)
     const [results, setResults] = useState([])
+    const [fetching, setFetching] = useState(false)
+    const debounceRef = useRef(null)
     const ref = useRef(null)
 
     // Close on outside click
@@ -117,18 +58,41 @@ function StationInput({ label, icon: Icon, value, onChange, placeholder }) {
         return () => document.removeEventListener('mousedown', h)
     }, [])
 
-    // Sync if parent clears value
+    // Sync if parent clears value or swaps
     useEffect(() => {
-        if (!value) setQuery('')
-        else if (value.code) setQuery(`${value.name} (${value.code})`)
+        if (!value) {
+            setQuery('')
+            setResults([])
+        } else if (value.code) {
+            setQuery(`${value.name} (${value.code})`)
+        }
     }, [value])
 
-    function handleInput(e) {
+    async function handleInput(e) {
         const q = e.target.value
         setQuery(q)
-        setResults(filterStations(q))
+
+        clearTimeout(debounceRef.current)
+
+        if (!q.trim() || q.length < 2) {
+            setResults([])
+            setOpen(false)
+            setFetching(false)
+            if (!q) onChange(null)
+            return
+        }
+
+        setFetching(true)
         setOpen(true)
-        if (!q) onChange(null)
+
+        debounceRef.current = setTimeout(async () => {
+            try {
+                const arr = await apiSearchStations(q)
+                setResults(arr)
+            } finally {
+                setFetching(false)
+            }
+        }, 300)
     }
 
     function pick(station) {
@@ -149,10 +113,15 @@ function StationInput({ label, icon: Icon, value, onChange, placeholder }) {
                         type="text"
                         value={query}
                         onChange={handleInput}
-                        onFocus={() => { if (results.length > 0 || query.length > 0) { setResults(filterStations(query)); setOpen(true) } }}
+                        onFocus={() => { if (results.length > 0) setOpen(true) }}
                         placeholder={placeholder}
                         className="w-full bg-transparent text-sm font-medium text-[#F0F6FC] placeholder-[#484F58] outline-none truncate"
                     />
+                    {fetching && (
+                        <div className="flex items-center gap-1.5 ml-2">
+                            <Loader2 size={12} className="animate-spin text-[#2F80ED]" />
+                        </div>
+                    )}
                     {value?.code && (
                         <p className="text-[10px] text-[#484F58] -mt-0.5">{value.city}</p>
                     )}
@@ -186,25 +155,85 @@ function StationInput({ label, icon: Icon, value, onChange, placeholder }) {
         </div>
     )
 }
+// ── Visual components for the train diagram ──────────────────────────────────
+function TrainEngine() {
+    return (
+        <div className="flex flex-col items-center">
+            <span className="text-[10px] font-bold text-[#8B949E] mb-1 leading-none">En</span>
+            <div className="relative w-16 h-8 bg-[#3D444D] rounded-l-md border-y border-l border-[#21262D]">
+                <div className="absolute top-1.5 left-1.5 w-3 h-2 bg-[#8B949E]/30 rounded-sm" />
+                <div className="absolute top-5 left-0 right-0 h-0.5 bg-[#F97316]/40" />
+                <div className="absolute -bottom-1 left-2 w-2.5 h-2.5 rounded-full bg-[#0D1117] border border-[#21262D]" />
+                <div className="absolute -bottom-1 left-9 w-2.5 h-2.5 rounded-full bg-[#0D1117] border border-[#21262D]" />
+            </div>
+            {/* Sync spacer with VisualCoach footer */}
+            <span className="text-[8px] font-bold mt-2 invisible leading-none">000 pax</span>
+        </div>
+    )
+}
+
+function VisualCoach({ id, count, ratio, isOffline, isLive }) {
+    const labelColor = isOffline ? 'text-[#8B949E]' : pctColor(ratio * 100)
+
+    return (
+        <div className="flex flex-col items-center min-w-[64px]">
+            <span className={`text-[10px] font-black mb-1 transition-colors duration-200 leading-none ${labelColor}`}>
+                {id}
+            </span>
+            <div
+                title={`${id} — ${isOffline ? 'Offline' : `${count} pax`}`}
+                className="relative w-16 h-8 border border-[#30363D] bg-[#21262D]/50 rounded-sm"
+            >
+                <div className="flex justify-around mt-1.5 px-0.5">
+                    {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="w-2.5 h-2 bg-white/5 rounded-sm border border-white/5" />
+                    ))}
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/10" />
+                {isLive && (
+                    <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-[#F97316]/80 shadow-[0_0_8px_#F97316] z-10" />
+                )}
+                <div className="absolute -bottom-1 left-2 w-2.5 h-2.5 rounded-full bg-[#0D1117] border border-[#21262D]" />
+                <div className="absolute -bottom-1 left-10 w-2.5 h-2.5 rounded-full bg-[#0D1117] border border-[#21262D]" />
+            </div>
+            {/* Always render text area to maintain vertical baseline */}
+            <span className={`text-[8px] font-bold mt-2 tabular-nums leading-none flex-shrink-0 text-[#8B949E] ${isLive ? 'opacity-60' : 'invisible'}`}>
+                {isOffline ? 'Offline' : `${count} pax`}
+            </span>
+        </div>
+    )
+}
 
 // ── inline crowd panel (DB-backed) ───────────────────────────────────────────
 function CrowdPanel({ trainNumber, sensorCompartments, loading, hasError, isLive, lastFetched, onRefresh, refreshing }) {
     const navigate = useNavigate()
 
-    const compartments = (sensorCompartments?.length > 0) ? sensorCompartments
-        : (sensorData[trainNumber]?.coaches || []).map(c => ({
-            compartmentId: c.coach,
-            coachType: c.type,
-            currentCount: c.occupancy,
-            capacity: c.capacity,
-            occupancyRatio: c.capacity > 0 ? c.occupancy / c.capacity : 0,
-            offline: c.status === 'offline',
-        }))
+    const liveCoaches = (sensorCompartments?.length > 0) ? sensorCompartments : []
 
-    const totalOcc = compartments.reduce((s, c) => s + c.currentCount, 0)
-    const totalCap = compartments.reduce((s, c) => s + c.capacity, 0)
+    // Standard layout like the reference image: Engine -> GS -> GS -> Sleeper...
+    const layoutIds = ['G1', 'G2', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6']
+    const fullTrain = [
+        { type: 'engine' },
+        ...layoutIds.map(id => {
+            // Find live data for this ID, or any live data that might be 'GS' etc.
+            const live = liveCoaches.find(c => c.compartmentId === id || (id.startsWith('G') && c.compartmentId === 'GS'))
+            if (live) return { ...live, isLive: true }
+            return {
+                compartmentId: id,
+                currentCount: id.startsWith('G') ? 45 : 20,
+                capacity: 100,
+                occupancyRatio: id.startsWith('G') ? 0.45 : 0.2,
+                offline: false,
+                isLive: false
+            }
+        })
+    ]
+
+    const totalOcc = liveCoaches.reduce((s, c) => s + c.currentCount, 0)
+    const totalCap = liveCoaches.reduce((s, c) => s + c.capacity, 0)
     const pct = totalCap > 0 ? Math.round(totalOcc / totalCap * 100) : 0
-    const online = compartments.filter(c => !c.offline)
+    const pc = ratio => ratio * 100
+    const online = fullTrain.filter(c => c.type !== 'engine' && !c.offline)
     const best = online.length ? online.reduce((a, b) => a.currentCount < b.currentCount ? a : b) : null
     const worst = online.length ? online.reduce((a, b) => a.currentCount > b.currentCount ? a : b) : null
     const age = secAgo(lastFetched)
@@ -242,23 +271,21 @@ function CrowdPanel({ trainNumber, sensorCompartments, loading, hasError, isLive
             </div>
 
             {/* Coach strip */}
-            <div className="overflow-x-auto pb-1">
-                <div className="flex gap-1.5 w-max">
-                    {loading ? Array.from({ length: 5 }).map((_, i) => <Sk key={i} style={{ width: 64, height: 52 }} className="rounded-lg" />)
-                        : compartments.map(c => {
-                            const { bg, text } = coachBg(c.occupancyRatio, c.offline)
-                            return (
-                                <div key={c.compartmentId}
-                                    title={`${c.compartmentId} — ${c.offline ? 'Offline' : `${c.currentCount} people`}`}
-                                    className="flex-shrink-0 flex flex-col items-center justify-center rounded-lg select-none"
-                                    style={{ width: 64, height: 52, backgroundColor: bg }}
-                                >
-                                    <span className="text-[11px] font-bold leading-tight" style={{ color: text }}>{c.compartmentId}</span>
-                                    <span className="text-[10px] leading-tight" style={{ color: text }}>{c.offline ? 'Off' : `${c.currentCount} pax`}</span>
-                                </div>
-                            )
-                        })}
-                    <div className="flex items-center justify-center w-10 flex-shrink-0">
+            <div className="overflow-x-auto pb-4 pt-2 no-scrollbar">
+                <div className="flex items-end gap-1.5 w-max px-2">
+                    {loading ? Array.from({ length: 8 }).map((_, i) => <Sk key={i} style={{ width: 64, height: 40 }} className="rounded-lg mb-4" />)
+                        : fullTrain.map((c, i) => (
+                            c.type === 'engine' ? <TrainEngine key="engine" /> :
+                                <VisualCoach
+                                    key={c.compartmentId || i}
+                                    id={c.compartmentId}
+                                    count={c.currentCount}
+                                    ratio={c.occupancyRatio}
+                                    isOffline={c.offline}
+                                    isLive={c.isLive}
+                                />
+                        ))}
+                    <div className="flex items-center justify-center w-10 flex-shrink-0 mb-4 opacity-50">
                         <Train size={16} className="text-[#484F58]" />
                     </div>
                 </div>
@@ -275,13 +302,10 @@ function CrowdPanel({ trainNumber, sensorCompartments, loading, hasError, isLive
 
             {/* Total */}
             {!loading
-                ? <p className="mt-2 text-center text-sm"><span className={`font-bold ${pctColor(pct)}`}>👥 {totalOcc} / {totalCap}</span><span className="text-xs text-[#8B949E] ml-1">({pct}% full)</span></p>
+                ? <p className="mt-2 text-center text-sm font-bold opacity-80 text-[#8B949E]">Record: {totalOcc} Passengers</p>
                 : <Sk className="w-40 h-4 mt-2 mx-auto" />}
 
-            <button onClick={() => navigate('/crowd', { state: { selectedTrainNo: trainNumber } })}
-                className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#2F80ED] hover:bg-[#2F80ED]/90 text-white text-sm font-semibold transition-all hover:shadow-[0_0_20px_rgba(47,128,237,0.3)]">
-                View Full Coach Details <ChevronRight size={15} />
-            </button>
+
         </div>
     )
 }
@@ -433,10 +457,183 @@ function TrainCard({ dbTrain, mockTrain, expandedId, setExpandedId }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// RAIL RADAR TRAIN CARD — renders a train from the /trains/between API
+// ════════════════════════════════════════════════════════════════════════════
+function RailRadarTrainCard({ train, influxTrain, expandedId, setExpandedId, from, to }) {
+    const { fetchForTrain, crowdData, isLoading, isError, lastFetched, isLive } = useSensor()
+    const [refreshing, setRefreshing] = useState(false)
+
+    const trainNo = String(train.trainNumber || train.number || '')
+    const trainName = train.trainName || train.name || `Train ${trainNo}`
+    const isExpanded = expandedId === trainNo
+    const hasLive = !!influxTrain
+
+    // Calculate occupancy if data exists
+    let overallPct = null
+    let totalOcc = 0
+    if (influxTrain?.coaches?.length > 0) {
+        totalOcc = influxTrain.coaches.reduce((s, c) => s + (c.currentCount || 0), 0)
+        const cap = influxTrain.coaches.reduce((s, c) => s + (c.capacity || 100), 0)
+        overallPct = cap > 0 ? Math.round((totalOcc / cap) * 100) : null
+    }
+
+    const departure = train.departureTime || train.source?.departureTime || train.fromStationData?.departureTime || '—'
+    const arrival = train.arrivalTime || train.destination?.arrivalTime || train.toStationData?.arrivalTime || '—'
+    const duration = train.duration || train.journeyTime || '—'
+
+    const fromCode = train.sourceStationCode || train.fromStation || from?.code || '—'
+    const toCode = train.destinationStationCode || train.toStation || to?.code || '—'
+
+    const classes = Array.isArray(train.classesAvailable)
+        ? train.classesAvailable
+        : typeof train.classesAvailable === 'string'
+            ? train.classesAvailable.split(',').map(c => c.trim()).filter(Boolean)
+            : []
+
+    const dayNames = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+    const runsOn = train.runningDays || ''
+
+    async function handleToggle() {
+        if (!hasLive) return
+        if (!isExpanded) { setExpandedId(trainNo); fetchForTrain(trainNo) }
+        else setExpandedId(null)
+    }
+
+    async function handleRefresh() {
+        setRefreshing(true)
+        await fetchForTrain(trainNo)
+        setRefreshing(false)
+    }
+
+    return (
+        <div className="border border-[#21262D] rounded-xl overflow-hidden hover:border-[#2F80ED]/20 transition-colors duration-200">
+            <div className="bg-[#161B22] px-5 py-4">
+                {/* Number + name + live dot */}
+                <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="text-xs font-black px-2 py-0.5 rounded bg-[#F97316]/15 text-[#F97316]">#{trainNo}</span>
+                            <h3 className="text-sm font-bold text-[#F0F6FC] truncate">{trainName}</h3>
+                        </div>
+                        {hasLive && (
+                            <div className="flex items-center gap-1.5 text-[10px] text-[#22C55E] font-semibold">
+                                <span className="relative flex h-1.5 w-1.5">
+                                    <span className="animate-ping absolute h-full w-full rounded-full bg-[#22C55E] opacity-75" />
+                                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
+                                </span>
+                                Live sensor data · {influxTrain.coaches.length} coaches
+                            </div>
+                        )}
+                    </div>
+                    {overallPct !== null && (
+                        <div className={`flex flex-col items-end flex-shrink-0 ${pctColor(overallPct)}`}>
+                            <span className="text-lg font-black leading-none">{totalOcc}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-tighter">People</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Timing row */}
+                <div className="flex items-center gap-3 mb-3">
+                    <div className="text-center min-w-[48px]">
+                        <p className="text-base font-bold text-[#F0F6FC]">{departure}</p>
+                        <p className="text-[10px] text-[#484F58]">{fromCode}</p>
+                    </div>
+                    <div className="flex-1 flex flex-col items-center gap-1">
+                        <p className="text-[10px] text-[#484F58]">{duration}</p>
+                        <div className="w-full flex items-center gap-1">
+                            <div className="h-px flex-1 bg-[#21262D]" />
+                            <Train size={12} className="text-[#2F80ED]" />
+                            <div className="h-px flex-1 bg-[#21262D]" />
+                        </div>
+                    </div>
+                    <div className="text-center min-w-[48px]">
+                        <p className="text-base font-bold text-[#F0F6FC]">{arrival}</p>
+                        <p className="text-[10px] text-[#484F58]">{toCode}</p>
+                    </div>
+                </div>
+
+                {/* Classes + running days */}
+                <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                    {classes.map(c => (
+                        <span key={c} className="text-[10px] font-semibold px-2 py-0.5 rounded bg-[#21262D] text-[#8B949E]">{c}</span>
+                    ))}
+                    {runsOn && runsOn.length === 7 && (
+                        <div className="flex gap-0.5 ml-auto">
+                            {dayNames.map((d, i) => (
+                                <span key={i} className={`text-[9px] font-bold px-1 py-0.5 rounded ${runsOn[i] === '1' ? 'bg-[#2F80ED]/15 text-[#2F80ED]' : 'bg-[#21262D] text-[#484F58]'
+                                    }`}>{d}</span>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* ── Coach Preview (Only if NOT expanded) ── */}
+                {hasLive && !isExpanded && influxTrain.coaches?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                        {influxTrain.coaches.slice(0, 10).map(c => {
+                            const ratio = c.currentCount / (c.capacity || 100)
+                            const { bg, text } = coachBg(ratio, false)
+                            return (
+                                <div
+                                    key={c.compartmentId}
+                                    className="flex flex-col items-center justify-center rounded-lg text-center px-2 py-1 min-w-[50px]"
+                                    style={{ backgroundColor: bg }}
+                                >
+                                    <span className="text-[10px] font-bold leading-tight" style={{ color: text }}>{c.compartmentId}</span>
+                                    <span className="text-[9px] font-black leading-tight opacity-90" style={{ color: text }}>{c.currentCount} pax</span>
+                                </div>
+                            )
+                        })}
+                        {influxTrain.coaches.length > 10 && (
+                            <div className="flex items-center justify-center px-2 text-[10px] text-[#484F58] font-bold">
+                                +{influxTrain.coaches.length - 10} more
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Live Crowd button */}
+                {hasLive ? (
+                    <button onClick={handleToggle}
+                        className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-all duration-200 ${isExpanded ? 'bg-[#F97316]/10 border-[#F97316]/40 text-[#F97316]'
+                            : 'bg-transparent border-[#F97316]/40 text-[#F97316] hover:bg-[#F97316]/5'
+                            }`}>
+                        <Users size={15} />
+                        {isExpanded ? 'Hide Coach Details ▲' : '👥 Check Live Crowd ▼'}
+                    </button>
+                ) : (
+                    <div className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs text-[#484F58] border border-[#21262D]/50 bg-[#0D1117]/40">
+                        <Wifi size={13} className="opacity-40" />
+                        No live sensor data for this train
+                    </div>
+                )}
+            </div>
+
+            {/* Crowd panel */}
+            <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: isExpanded ? '600px' : '0px' }}>
+                {isExpanded && (
+                    <CrowdPanel
+                        trainNumber={trainNo}
+                        sensorCompartments={crowdData}
+                        loading={isLoading}
+                        hasError={isError}
+                        isLive={isLive}
+                        lastFetched={lastFetched}
+                        onRefresh={handleRefresh}
+                        refreshing={refreshing}
+                    />
+                )}
+            </div>
+        </div>
+    )
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ════════════════════════════════════════════════════════════════════════════
 export default function SearchTrain() {
-    const { availableTrains, trainsLoading, trainsLoadError } = useSensor()
+    const { availableTrains } = useSensor()
 
     const [from, setFrom] = useState(null)
     const [to, setTo] = useState(null)
@@ -444,27 +641,35 @@ export default function SearchTrain() {
     const [searched, setSearched] = useState(false)
     const [expandedId, setExpandedId] = useState(null)
 
-    function handleSwap() {
-        setFrom(to)
-        setTo(from)
-    }
+    // ── RailRadar API state ───────────────────────────────────────────────────
+    const [apiTrains, setApiTrains] = useState([])
+    const [apiLoading, setApiLoading] = useState(false)
+    const [apiError, setApiError] = useState(null)
 
-    function handleSearch() {
+    function handleSwap() { setFrom(to); setTo(from) }
+
+    async function handleSearch() {
         if (!from || !to) return
         setSearched(true)
         setExpandedId(null)
+        setApiTrains([])
+        setApiError(null)
+        setApiLoading(true)
+        try {
+            const json = await getTrainsBetween(from.code, to.code)
+            const trains = Array.isArray(json) ? json
+                : Array.isArray(json?.data?.trains) ? json.data.trains
+                    : Array.isArray(json?.data) ? json.data
+                        : []
+            console.log(`[SearchTrain] ${trains.length} trains for ${from.code}→${to.code}`, trains)
+            setApiTrains(trains)
+        } catch (err) {
+            console.error('[SearchTrain] getTrainsBetween error:', err)
+            setApiError(err.message || 'Failed to fetch trains')
+        } finally {
+            setApiLoading(false)
+        }
     }
-
-    // Filter trains: from availableTrains (DB), optionally cross-ref mockTrains for metadata
-    // Show all DB trains when no station filter is applied,
-    // or filter by from/to codes when selected
-    const results = (() => {
-        if (!searched) return []
-        return availableTrains.map(dbT => ({
-            dbTrain: dbT,
-            mockTrain: mockTrains.find(m => m.trainNo === dbT.trainNumber) || null,
-        }))
-    })()
 
     const POPULAR = [
         { from: { code: 'NDLS', name: 'New Delhi', city: 'Delhi' }, to: { code: 'CSTM', name: 'Mumbai Chhatrapati Shivaji Maharaj Terminus', city: 'Mumbai' } },
@@ -576,12 +781,13 @@ export default function SearchTrain() {
             {/* ── Results ──────────────────────────────────────────────────── */}
             {searched && (
                 <div className="space-y-3">
-                    {/* Result header */}
+                    {/* Header */}
                     <div className="flex items-center justify-between flex-wrap gap-2">
                         <div>
                             <h2 className="text-base font-semibold text-[#F0F6FC]">
-                                {trainsLoading ? 'Loading trains from database…'
-                                    : `${results.length} Train${results.length !== 1 ? 's' : ''} with Live Data`}
+                                {apiLoading ? 'Searching trains…'
+                                    : apiError ? 'Search failed'
+                                        : `${apiTrains.length} Train${apiTrains.length !== 1 ? 's' : ''} Found`}
                             </h2>
                             {from && to && (
                                 <p className="text-xs text-[#484F58] mt-0.5">
@@ -589,38 +795,65 @@ export default function SearchTrain() {
                                 </p>
                             )}
                         </div>
-                        {trainsLoadError && (
-                            <span className="flex items-center gap-1 text-[10px] text-[#8B949E] border border-[#21262D] px-2 py-1 rounded-full">
-                                <WifiOff size={9} />Showing cached data
+                        {apiError && (
+                            <span className="flex items-center gap-1 text-[10px] text-[#EF4444] border border-[#EF4444]/30 px-2 py-1 rounded-full">
+                                <WifiOff size={9} />{apiError}
                             </span>
                         )}
                     </div>
 
-                    {trainsLoading ? (
+                    {/* Loading skeletons */}
+                    {apiLoading && (
                         <div className="space-y-3">
-                            {Array.from({ length: 2 }).map((_, i) => (
-                                <div key={i} className="border border-[#21262D] rounded-xl p-5 space-y-3">
-                                    <Sk className="w-48 h-5" /><Sk className="w-64 h-3" /><Sk className="w-full h-9 rounded-xl" />
+                            {Array.from({ length: 3 }).map((_, i) => (
+                                <div key={i} className="border border-[#21262D] rounded-xl p-5 space-y-3 bg-[#161B22]">
+                                    <div className="flex gap-3"><Sk className="w-16 h-5 rounded" /><Sk className="w-40 h-5 rounded" /></div>
+                                    <div className="flex items-center gap-4"><Sk className="w-12 h-8 rounded" /><Sk className="flex-1 h-2 rounded" /><Sk className="w-12 h-8 rounded" /></div>
+                                    <Sk className="w-full h-9 rounded-xl" />
                                 </div>
                             ))}
                         </div>
-                    ) : results.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center gap-3 py-14 bg-[#161B22] rounded-2xl border border-[#21262D]">
-                            <Train size={28} className="text-[#484F58]" />
-                            <p className="text-sm font-medium text-[#484F58]">No trains with live sensor data found</p>
-                            <p className="text-xs text-[#484F58]">Try a different route or check back when sensors are active</p>
+                    )}
+
+                    {/* Error */}
+                    {!apiLoading && apiError && (
+                        <div className="flex flex-col items-center gap-3 py-14 bg-[#161B22] rounded-2xl border border-[#21262D]">
+                            <AlertTriangle size={28} className="text-[#F97316]" />
+                            <p className="text-sm font-medium text-[#F0F6FC]">Could not fetch trains</p>
+                            <p className="text-xs text-[#484F58]">{apiError}</p>
+                            <button onClick={handleSearch} className="mt-1 px-4 py-2 rounded-lg bg-[#2F80ED] text-white text-xs font-semibold hover:bg-[#2F80ED]/80 transition-colors">Retry</button>
                         </div>
-                    ) : (
+                    )}
+
+                    {/* No results */}
+                    {!apiLoading && !apiError && apiTrains.length === 0 && (
+                        <div className="flex flex-col items-center gap-3 py-14 bg-[#161B22] rounded-2xl border border-[#21262D]">
+                            <Train size={28} className="text-[#484F58]" />
+                            <p className="text-sm font-medium text-[#484F58]">No trains found for this route</p>
+                            <p className="text-xs text-[#484F58]">Try swapping stations or a different date</p>
+                        </div>
+                    )}
+
+                    {/* Train cards */}
+                    {!apiLoading && !apiError && apiTrains.length > 0 && (
                         <div className="space-y-3">
-                            {results.map(({ dbTrain, mockTrain }) => (
-                                <TrainCard
-                                    key={dbTrain.trainNumber}
-                                    dbTrain={dbTrain}
-                                    mockTrain={mockTrain}
-                                    expandedId={expandedId}
-                                    setExpandedId={setExpandedId}
-                                />
-                            ))}
+                            {apiTrains.map((train) => {
+                                const influxMatch = availableTrains.find(
+                                    t => t.trainNumber === String(train.trainNumber)
+                                        || t.trainNumber === String(train.number)
+                                )
+                                return (
+                                    <RailRadarTrainCard
+                                        key={train.trainNumber || train.number}
+                                        train={train}
+                                        influxTrain={influxMatch || null}
+                                        expandedId={expandedId}
+                                        setExpandedId={setExpandedId}
+                                        from={from}
+                                        to={to}
+                                    />
+                                )
+                            })}
                         </div>
                     )}
                 </div>

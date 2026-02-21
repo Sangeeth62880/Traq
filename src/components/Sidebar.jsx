@@ -110,8 +110,8 @@ export default function Sidebar({ isOpen, onClose }) {
                                             <Icon
                                                 size={17}
                                                 className={`flex-shrink-0 transition-colors duration-150 ${isActive
-                                                        ? 'text-[#2F80ED]'
-                                                        : 'text-[#484F58] group-hover:text-[#8B949E]'
+                                                    ? 'text-[#2F80ED]'
+                                                    : 'text-[#484F58] group-hover:text-[#8B949E]'
                                                     }`}
                                             />
                                             <span className="truncate">{label}</span>

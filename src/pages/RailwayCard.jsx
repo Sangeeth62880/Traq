@@ -1,11 +1,15 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
     CreditCard, Ticket, Star, Shield, Zap,
     QrCode, Hash, ChevronRight, ClipboardList,
     CheckCircle2, Loader2, AlertTriangle, LogOut, ScanLine,
-    Train, ArrowRight, MapPin,
+    Train, ArrowRight, Bluetooth, BluetoothConnected, BluetoothOff, RefreshCw,
 } from 'lucide-react'
+import {
+    connectToCard, disconnectCard, isConnected as bleIsConnected,
+    getDeviceName, writeToCard, tryAutoConnect, sendTicketsToCard,
+} from '../services/bleService'
 import {
     GoogleAuthProvider,
     signInWithPopup,
@@ -18,14 +22,14 @@ import {
 } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // STEP CONSTANTS
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const STEP_CONNECT = 'connect'
 const STEP_SIGNIN = 'signin'
 const STEP_DONE = 'done'
 
-// ── Train type metadata (mirrors GeneralTicket.jsx) ──────────────────────────
+// â”€â”€ Train type metadata (mirrors GeneralTicket.jsx) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TRAIN_TYPES = [
     { code: 'ORD', label: 'Ordinary', fare: 30, color: '#8B949E' },
     { code: 'MEMU', label: 'MEMU', fare: 45, color: '#22C55E' },
@@ -34,7 +38,7 @@ const TRAIN_TYPES = [
     { code: 'SF', label: 'Superfast', fare: 110, color: '#F97316' },
 ]
 
-// ── Premium Ticket Card Visual (Matches GeneralTicket.jsx) ───────────────────
+// â”€â”€ Premium Ticket Card Visual (Matches GeneralTicket.jsx) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function TicketCard({ booking }) {
     const type = TRAIN_TYPES.find(t => t.code === booking.trainType) || TRAIN_TYPES[0]
 
@@ -68,7 +72,7 @@ function TicketCard({ booking }) {
                         <div className="flex-1">
                             <p className="text-[9px] font-bold uppercase tracking-widest text-[#484F58] mb-0.5">From</p>
                             <p className="text-2xl font-black text-[#F0F6FC] leading-none">{booking.from}</p>
-                            <p className="text-[10px] text-[#8B949E] mt-0.5">{booking.departure || '—'}</p>
+                            <p className="text-[10px] text-[#8B949E] mt-0.5">{booking.departure || 'â€”'}</p>
                         </div>
                         <div className="flex flex-col items-center justify-center gap-1 px-1">
                             <div className="h-px w-10" style={{ background: `linear-gradient(90deg, transparent, ${type.color}, transparent)` }} />
@@ -77,7 +81,7 @@ function TicketCard({ booking }) {
                         <div className="flex-1 text-right">
                             <p className="text-[9px] font-bold uppercase tracking-widest text-[#484F58] mb-0.5">To</p>
                             <p className="text-2xl font-black text-[#F0F6FC] leading-none">{booking.to}</p>
-                            <p className="text-[10px] text-[#8B949E] mt-0.5">{booking.arrival || '—'}</p>
+                            <p className="text-[10px] text-[#8B949E] mt-0.5">{booking.arrival || 'â€”'}</p>
                         </div>
                     </div>
 
@@ -116,7 +120,7 @@ function TicketCard({ booking }) {
                         {booking.cardNo && (
                             <div>
                                 <p className="text-[8px] font-bold uppercase tracking-widest text-[#484F58]">Card</p>
-                                <p className="text-[10px] font-bold text-[#2F80ED] font-mono">•••• {booking.cardNo.slice(-4)}</p>
+                                <p className="text-[10px] font-bold text-[#2F80ED] font-mono">â€¢â€¢â€¢â€¢ {booking.cardNo.slice(-4)}</p>
                             </div>
                         )}
                         <div className="flex items-center gap-1">
@@ -126,7 +130,7 @@ function TicketCard({ booking }) {
                     </div>
                     <div className="shrink-0 text-right">
                         <p className="text-[8px] font-bold uppercase tracking-widest text-[#484F58] mb-0.5">Fare</p>
-                        <p className="text-2xl font-black leading-none" style={{ color: type.color }}>₹{booking.fare}</p>
+                        <p className="text-2xl font-black leading-none" style={{ color: type.color }}>â‚¹{booking.fare}</p>
                         <p className="text-[9px] text-[#484F58] mt-0.5">incl. all taxes</p>
                     </div>
                 </div>
@@ -135,10 +139,10 @@ function TicketCard({ booking }) {
     )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-// ── Mini QR placeholder (16×16 dots) ─────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€ Mini QR placeholder (16Ã—16 dots) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function QRPlaceholder({ size = 64 }) {
     const cells = Array.from({ length: 16 * 16 }, (_, i) => {
         const x = i % 16, y = Math.floor(i / 16)
@@ -166,268 +170,219 @@ function PlaceholderCard({ message = 'Feature coming in next phase' }) {
     )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STEP 1 – Connect card (QR or card number)
-// ─────────────────────────────────────────────────────────────────────────────
-function ConnectStep({ onNext }) {
-    const [mode, setMode] = useState(null)
-    const [cardNo, setCardNo] = useState('')
-    const [scanned, setScanned] = useState(false)
-    const [err, setErr] = useState('')
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// MAIN RAILWAY CARD PAGE  (single page â€” no multi-step wizard)
+// Auth: Google sign-in   BLE: hardcoded to RCARD0000011
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export default function RailwayCard() {
+    const navigate = useNavigate()
+    const [userData, setUserData] = useState(null)
+    const [authChecked, setAuthChecked] = useState(false)
+    const [authLoading, setAuthLoading] = useState(false)
+    const [authErr, setAuthErr] = useState('')
 
-    function handleContinue() {
-        if (mode === 'qr' && !scanned) { setErr('Please scan your card QR first'); return }
-        if (mode === 'number' && cardNo.trim().length < 8) { setErr('Enter a valid card number (min 8 digits)'); return }
-        onNext({ cardNo: mode === 'qr' ? 'QR-' + Math.random().toString(36).slice(2, 10).toUpperCase() : cardNo.trim() })
+    // â”€â”€ BLE state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const [bleConnected, setBleConnected] = useState(() => bleIsConnected())
+    const [bleName, setBleName] = useState(() => getDeviceName())
+    const [bleStatus, setBleStatus] = useState('idle')  // idle|auto|connecting|error
+    const [bleErr, setBleErr] = useState('')
+
+    function refreshBleStatus() {
+        setBleConnected(bleIsConnected())
+        setBleName(getDeviceName())
     }
 
-    return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-[#F0F6FC] flex items-center gap-2">
-                    <CreditCard size={22} className="text-[#2F80ED]" />
-                    Connect Railway Card
-                </h1>
-                <p className="text-sm text-[#8B949E] mt-1">Link your physical railway card to access digital features</p>
-            </div>
+    // â”€â”€ Tickets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const [tickets, setTickets] = useState([])
+    const [ticketsLoading, setTicketsLoading] = useState(false)
+    const [ticketsErr, setTicketsErr] = useState('')
+    const [ticketsOpen, setTicketsOpen] = useState(false)
 
-            {/* Mode selector */}
-            <div className="bg-[#161B22] border border-[#21262D] rounded-2xl p-5 space-y-4">
-                <p className="text-xs font-bold uppercase tracking-widest text-[#484F58]">Choose connection method</p>
+    // â”€â”€ Per-ticket write â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const [writingId, setWritingId] = useState(null)
+    const [writeResult, setWriteResult] = useState({})
 
-                <div className="grid sm:grid-cols-2 gap-3">
-                    {/* QR option */}
-                    <button onClick={() => { setMode('qr'); setErr('') }}
-                        className={`flex flex-col items-center gap-3 p-5 rounded-xl border transition-all duration-200 text-center ${mode === 'qr'
-                            ? 'border-[#2F80ED] bg-[#2F80ED]/8 shadow-[0_0_16px_rgba(47,128,237,0.15)]'
-                            : 'border-[#21262D] bg-[#0D1117] hover:border-[#2F80ED]/40'
-                            }`}>
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${mode === 'qr' ? 'bg-[#2F80ED]/15' : 'bg-[#161B22]'}`}>
-                            <QrCode size={24} className={mode === 'qr' ? 'text-[#2F80ED]' : 'text-[#484F58]'} />
-                        </div>
-                        <div>
-                            <p className={`text-sm font-bold ${mode === 'qr' ? 'text-[#2F80ED]' : 'text-[#8B949E]'}`}>Scan QR Code</p>
-                            <p className="text-[10px] text-[#484F58] mt-0.5">Use the QR on your railway card</p>
-                        </div>
-                    </button>
+    // â”€â”€ Bulk send â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const [bleSendStatus, setBleSendStatus] = useState('idle')
+    const [bleSendProgress, setBleSendProgress] = useState({ sent: 0, total: 0 })
+    const [bleSendErr, setBleSendErr] = useState('')
 
-                    {/* Card number option */}
-                    <button onClick={() => { setMode('number'); setErr('') }}
-                        className={`flex flex-col items-center gap-3 p-5 rounded-xl border transition-all duration-200 text-center ${mode === 'number'
-                            ? 'border-[#2F80ED] bg-[#2F80ED]/8 shadow-[0_0_16px_rgba(47,128,237,0.15)]'
-                            : 'border-[#21262D] bg-[#0D1117] hover:border-[#2F80ED]/40'
-                            }`}>
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${mode === 'number' ? 'bg-[#2F80ED]/15' : 'bg-[#161B22]'}`}>
-                            <Hash size={24} className={mode === 'number' ? 'text-[#2F80ED]' : 'text-[#484F58]'} />
-                        </div>
-                        <div>
-                            <p className={`text-sm font-bold ${mode === 'number' ? 'text-[#2F80ED]' : 'text-[#8B949E]'}`}>Card Number</p>
-                            <p className="text-[10px] text-[#484F58] mt-0.5">Enter the number printed on your card</p>
-                        </div>
-                    </button>
-                </div>
-
-                {/* QR scan area */}
-                {mode === 'qr' && (
-                    <div className="space-y-3">
-                        <div
-                            onClick={() => setScanned(true)}
-                            className={`relative flex flex-col items-center justify-center gap-3 h-44 rounded-xl border-2 border-dashed cursor-pointer transition-all ${scanned ? 'border-[#238636] bg-[#238636]/8' : 'border-[#21262D] hover:border-[#2F80ED]/40 bg-[#0D1117]'
-                                }`}>
-                            {scanned ? (
-                                <>
-                                    <CheckCircle2 size={32} className="text-[#238636]" />
-                                    <p className="text-sm font-bold text-[#238636]">QR Scanned Successfully</p>
-                                </>
-                            ) : (
-                                <>
-                                    <ScanLine size={32} className="text-[#484F58]" />
-                                    <p className="text-sm text-[#484F58]">Click to simulate QR scan</p>
-                                    <p className="text-[10px] text-[#21262D]">(In production, camera opens here)</p>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* Card number input */}
-                {mode === 'number' && (
-                    <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-[#484F58]">Railway Card Number</label>
-                        <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#0D1117] border border-[#21262D] hover:border-[#2F80ED]/30 focus-within:border-[#2F80ED]/60 transition-all">
-                            <CreditCard size={14} className="text-[#484F58]" />
-                            <input
-                                type="text"
-                                placeholder="e.g. 1234 5678 9012 3456"
-                                maxLength={20}
-                                className="flex-1 bg-transparent text-sm text-[#F0F6FC] placeholder-[#484F58] outline-none font-mono tracking-wider"
-                                value={cardNo}
-                                onChange={e => { setCardNo(e.target.value); setErr('') }}
-                            />
-                        </div>
-                    </div>
-                )}
-
-                {err && (
-                    <p className="flex items-center gap-1.5 text-xs text-[#EF4444]">
-                        <AlertTriangle size={12} />{err}
-                    </p>
-                )}
-
-                <button
-                    onClick={handleContinue}
-                    disabled={!mode}
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#2F80ED] hover:bg-[#2F80ED]/90 text-white text-sm font-bold transition-all hover:shadow-[0_0_24px_rgba(47,128,237,0.35)] disabled:opacity-30 disabled:cursor-not-allowed">
-                    Continue to Sign In <ChevronRight size={16} />
-                </button>
-            </div>
-
-            {/* Info */}
-            <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-[#0D1117] border border-[#21262D] text-xs text-[#484F58]">
-                <Shield size={14} className="text-[#2F80ED] shrink-0 mt-0.5" />
-                <p>Your card data is encrypted and linked to your verified Google account. We never store card PINs or CVVs.</p>
-            </div>
-        </div>
-    )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// STEP 2 – Google Sign-In
-// ─────────────────────────────────────────────────────────────────────────────
-function GoogleSignInStep({ cardData, onSuccess }) {
-    const [loading, setLoading] = useState(false)
-    const [err, setErr] = useState('')
-
-    async function handleGoogleSignIn() {
-        setErr('')
-        setLoading(true)
+    // â”€â”€ Connect to RCARD0000011 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    async function handleBleConnect() {
+        setBleStatus('connecting')
+        setBleErr('')
         try {
-            // ── Step 1: Google OAuth (this is what creates the user in Firebase Auth) ──
-            const provider = new GoogleAuthProvider()
-            const result = await signInWithPopup(auth, provider)
-            const user = result.user
-
-            // ── Step 2: Save to Firestore (may fail if rules aren't set yet) ──
-            try {
-                const userRef = doc(db, 'railcard_users', user.uid)
-                const snap = await getDoc(userRef)
-
-                if (!snap.exists()) {
-                    await setDoc(userRef, {
-                        uid: user.uid,
-                        email: user.email,
-                        name: user.displayName,
-                        photo: user.photoURL,
-                        cardNo: cardData.cardNo,
-                        createdAt: serverTimestamp(),
-                        lastLogin: serverTimestamp(),
-                    })
-                } else {
-                    await setDoc(userRef, {
-                        lastLogin: serverTimestamp(),
-                        cardNo: cardData.cardNo,
-                        name: user.displayName,
-                        photo: user.photoURL,
-                    }, { merge: true })
-                }
-            } catch (fsErr) {
-                // Firestore permissions error — auth still succeeded, let the user in
-                // but warn them so they know to fix Firestore rules
-                if (fsErr.code === 'permission-denied') {
-                    console.warn(
-                        '[RailwayCard] Firestore permission denied.\n' +
-                        'Fix: Firebase Console → Firestore → Rules → ' +
-                        'allow read, write: if request.auth != null && request.auth.uid == userId;'
-                    )
-                    // Non-fatal: proceed to card UI anyway
-                } else {
-                    throw fsErr   // unexpected Firestore error — surface it
-                }
-            }
-
-            // ── Step 3: Success — move to card UI ──
-            onSuccess({
-                uid: user.uid,
-                email: user.email,
-                name: user.displayName,
-                photo: user.photoURL,
-                cardNo: cardData.cardNo,
-            })
+            const name = await connectToCard({ onDisconnected: () => { refreshBleStatus(); setBleSendStatus('idle') } })
+            setBleName(name)
+            setBleConnected(true)
+            setBleStatus('idle')
+            // Push tickets immediately after connecting
+            if (tickets.length > 0) setTimeout(() => sendAllTickets(tickets), 400)
         } catch (e) {
-            if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
-                setErr('Sign-in popup was closed. Please try again.')
-            } else if (e.code === 'auth/popup-blocked') {
-                setErr('Popup was blocked by your browser. Please allow popups for this site and try again.')
-            } else {
-                setErr(e.message || 'Google sign-in failed. Please try again.')
-            }
-        } finally {
-            setLoading(false)
+            setBleStatus('error')
+            setBleErr(e.message || 'Could not connect to RCARD0000011')
         }
     }
 
-    return (
-        <div className="space-y-6">
+    // â”€â”€ Auto-connect on mount (silent, no picker) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    useEffect(() => {
+        if (!userData || bleIsConnected()) return
+        setBleStatus('auto')
+        tryAutoConnect(() => { refreshBleStatus(); setBleSendStatus('idle') })
+            .then(name => {
+                if (name) {
+                    setBleName(name); setBleConnected(true)
+                    console.info('[BLE] Auto-connected to', name)
+                }
+            })
+            .catch(() => { })
+            .finally(() => setBleStatus('idle'))
+    }, [userData?.uid])
+
+    // â”€â”€ Send all tickets to RCARD0000011 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    async function sendAllTickets(ticketList) {
+        const list = ticketList ?? tickets
+        if (!list.length || !bleIsConnected()) {
+            setBleSendStatus('error')
+            setBleSendErr(list.length === 0 ? 'No tickets to send.' : 'Card not connected. Connect first.')
+            return
+        }
+        setBleSendStatus('sending')
+        setBleSendProgress({ sent: 0, total: list.length })
+        setBleSendErr('')
+        try {
+            await sendTicketsToCard(list, (sent, total) => setBleSendProgress({ sent, total }))
+            setBleSendStatus('done')
+        } catch (e) {
+            setBleSendStatus('error')
+            setBleSendErr(e.message || 'Failed to send tickets to card.')
+        }
+    }
+
+    // â”€â”€ Google sign in â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    async function handleGoogleSignIn() {
+        setAuthErr('')
+        setAuthLoading(true)
+        try {
+            const provider = new GoogleAuthProvider()
+            const result = await signInWithPopup(auth, provider)
+            const user = result.user
+            try {
+                const ref = doc(db, 'railcard_users', user.uid)
+                const snap = await getDoc(ref)
+                const payload = {
+                    uid: user.uid, email: user.email,
+                    name: user.displayName, photo: user.photoURL,
+                    cardId: 'RCARD0000011', lastLogin: serverTimestamp(),
+                }
+                await setDoc(ref, snap.exists() ? payload : { ...payload, createdAt: serverTimestamp() }, { merge: true })
+            } catch (fsErr) {
+                if (fsErr.code !== 'permission-denied') throw fsErr
+                console.warn('[RailwayCard] Firestore permission-denied â€” proceeding anyway.')
+            }
+            setUserData({ uid: user.uid, email: user.email, name: user.displayName, photo: user.photoURL })
+        } catch (e) {
+            if (!e.code?.includes('popup-closed') && !e.code?.includes('cancelled')) {
+                setAuthErr(e.message || 'Google sign-in failed.')
+            }
+        } finally {
+            setAuthLoading(false)
+        }
+    }
+
+    async function handleSignOut() {
+        await signOut(auth)
+        setUserData(null)
+        disconnectCard()
+        refreshBleStatus()
+        setTickets([])
+        setBleSendStatus('idle')
+    }
+
+    // â”€â”€ Restore session on mount â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    useEffect(() => {
+        const unsub = onAuthStateChanged(auth, async user => {
+            if (user) {
+                try {
+                    const snap = await getDoc(doc(db, 'railcard_users', user.uid))
+                    const d = snap.exists() ? snap.data() : {}
+                    setUserData({ uid: user.uid, email: d.email || user.email, name: d.name || user.displayName, photo: d.photo || user.photoURL })
+                } catch {
+                    setUserData({ uid: user.uid, email: user.email, name: user.displayName, photo: user.photoURL })
+                }
+            }
+            setAuthChecked(true)
+        })
+        return unsub
+    }, [])
+
+    // â”€â”€ Fetch tickets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    useEffect(() => {
+        if (!userData?.uid) return
+        setTicketsLoading(true)
+        setTicketsErr('')
+        const q = query(collection(db, 'bookings'), where('uid', '==', userData.uid))
+        getDocs(q)
+            .then(snap => {
+                const results = snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }))
+                results.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+                setTickets(results)
+                if (results.length > 0 && bleIsConnected()) setTimeout(() => sendAllTickets(results), 600)
+            })
+            .catch(e => setTicketsErr(e.message.includes('index') ? 'Firestore index buildingâ€¦' : 'Failed to load tickets.'))
+            .finally(() => setTicketsLoading(false))
+    }, [userData?.uid])
+
+    // â”€â”€ Loading spinner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if (!authChecked) return (
+        <div className="flex items-center justify-center min-h-64">
+            <Loader2 size={28} className="animate-spin text-[#2F80ED]" />
+        </div>
+    )
+
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // NOT SIGNED IN
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if (!userData) return (
+        <div className="space-y-6 max-w-md mx-auto">
             {/* Header */}
             <div>
                 <h1 className="text-2xl font-bold text-[#F0F6FC] flex items-center gap-2">
-                    {/* Google G icon */}
-                    <svg width="22" height="22" viewBox="0 0 48 48" className="shrink-0">
-                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.36-8.16 2.36-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                        <path fill="none" d="M0 0h48v48H0z" />
-                    </svg>
-                    Sign in with Google
+                    <CreditCard size={22} className="text-[#2F80ED]" /> Railway Card
                 </h1>
-                <p className="text-sm text-[#8B949E] mt-1">
-                    We'll use your Google account to verify your identity and link it to your railway card.
-                </p>
+                <p className="text-sm text-[#8B949E] mt-1">Sign in to push your ticket data to RCARD0000011 via Bluetooth.</p>
             </div>
 
-            {/* Card being linked */}
-            <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#0D1117] border border-[#21262D]">
-                <CreditCard size={16} className="text-[#2F80ED] shrink-0" />
-                <div>
-                    <p className="text-[10px] text-[#484F58] font-bold uppercase tracking-wider">Linking Card</p>
-                    <p className="text-sm font-mono font-bold text-[#F0F6FC]">{cardData.cardNo}</p>
-                </div>
-            </div>
-
-            {/* Sign-in box */}
-            <div className="bg-[#161B22] border border-[#21262D] rounded-2xl p-8 flex flex-col items-center gap-6">
-                {/* Google logo big */}
-                <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center shadow-lg">
-                    <svg width="32" height="32" viewBox="0 0 48 48">
-                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.36-8.16 2.36-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                        <path fill="none" d="M0 0h48v48H0z" />
-                    </svg>
+            {/* ESP card visual */}
+            <div className="bg-[#161B22] border border-[#21262D] rounded-2xl p-6 space-y-4">
+                <div className="flex items-center gap-4 p-4 rounded-xl bg-[#0D1117] border border-[#2F80ED]/20">
+                    <div className="w-12 h-12 rounded-xl bg-[#2F80ED]/10 border border-[#2F80ED]/30 flex items-center justify-center shrink-0">
+                        <Bluetooth size={22} className="text-[#2F80ED]" />
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-[#484F58]">Railway Card Device</p>
+                        <p className="text-sm font-mono font-bold text-[#F0F6FC]">RCARD0000011</p>
+                        <p className="text-[11px] text-[#484F58]">ESP32 BLE â€” ticket store</p>
+                    </div>
+                    <div className="ml-auto">
+                        <span className="text-[10px] font-bold text-[#484F58] bg-[#21262D] px-2 py-0.5 rounded-full">Permanent ID</span>
+                    </div>
                 </div>
 
-                <div className="text-center space-y-1">
-                    <p className="text-sm font-semibold text-[#F0F6FC]">Secure Google Authentication</p>
-                    <p className="text-xs text-[#484F58]">A popup will open for you to choose your Google account.</p>
-                </div>
+                <p className="text-xs text-[#484F58] text-center">Sign in with Google â€” tickets in your account will be automatically pushed to this card once connected.</p>
 
-                {err && (
-                    <p className="flex items-center gap-1.5 text-xs text-[#EF4444] text-center">
-                        <AlertTriangle size={12} className="shrink-0" />{err}
+                {authErr && (
+                    <p className="flex items-center gap-1.5 text-xs text-[#EF4444]">
+                        <AlertTriangle size={12} className="shrink-0" />{authErr}
                     </p>
                 )}
 
                 <button
                     id="google-signin-btn"
                     onClick={handleGoogleSignIn}
-                    disabled={loading}
+                    disabled={authLoading}
                     className="w-full flex items-center justify-center gap-3 py-3 px-5 rounded-xl bg-white hover:bg-gray-50 text-gray-800 text-sm font-bold transition-all hover:shadow-[0_4px_20px_rgba(255,255,255,0.15)] disabled:opacity-50 disabled:cursor-not-allowed border border-gray-200">
-                    {loading ? (
-                        <Loader2 size={18} className="animate-spin text-gray-500" />
-                    ) : (
+                    {authLoading ? <Loader2 size={18} className="animate-spin text-gray-500" /> : (
                         <svg width="18" height="18" viewBox="0 0 48 48">
                             <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
                             <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
@@ -436,127 +391,25 @@ function GoogleSignInStep({ cardData, onSuccess }) {
                             <path fill="none" d="M0 0h48v48H0z" />
                         </svg>
                     )}
-                    {loading ? 'Signing in…' : 'Continue with Google'}
+                    {authLoading ? 'Signing inâ€¦' : 'Continue with Google'}
                 </button>
-            </div>
 
-            {/* Info */}
-            <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-[#0D1117] border border-[#21262D] text-xs text-[#484F58]">
-                <Shield size={14} className="text-[#238636] shrink-0 mt-0.5" />
-                <p>
-                    We only access your <span className="text-[#F0F6FC]">name, email, and profile photo</span> from Google.
-                    No passwords are stored. You can revoke access anytime from your Google account settings.
-                </p>
+                <div className="flex items-start gap-2 text-[11px] text-[#484F58]">
+                    <Shield size={12} className="text-[#238636] shrink-0 mt-0.5" />
+                    <span>We only read your name, email, and photo from Google. No passwords stored.</span>
+                </div>
             </div>
         </div>
     )
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN RAILWAY CARD PAGE
-// ─────────────────────────────────────────────────────────────────────────────
-export default function RailwayCard() {
-    const navigate = useNavigate()
-    const [step, setStep] = useState(STEP_CONNECT)
-    const [cardData, setCardData] = useState(null)
-    const [userData, setUserData] = useState(null)
-    const [authChecked, setAuthChecked] = useState(false)
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // SIGNED IN â€” main dashboard
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    // ── Booked tickets ─────────────────────────────────────────────────────────
-    const [tickets, setTickets] = useState([])
-    const [ticketsLoading, setTicketsLoading] = useState(false)
-    const [ticketsOpen, setTicketsOpen] = useState(false)
-
-    // Restore session on mount
-    useEffect(() => {
-        const unsub = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                try {
-                    const snap = await getDoc(doc(db, 'railcard_users', user.uid))
-                    if (snap.exists()) {
-                        const d = snap.data()
-                        setUserData({ uid: user.uid, email: d.email, name: d.name, photo: d.photo, cardNo: d.cardNo })
-                        setCardData({ cardNo: d.cardNo })
-                        setStep(STEP_DONE)
-                    }
-                } catch { /* ignore — will show connect screen */ }
-            }
-            setAuthChecked(true)
-        })
-        return unsub
-    }, [])
-
-    const [ticketsErr, setTicketsErr] = useState('')
-
-    // ── Fetch booked tickets from Firestore whenever userData is set ───────────
-    useEffect(() => {
-        if (!userData?.uid) return
-        setTicketsLoading(true)
-        setTicketsErr('')
-
-        // We fetch by UID. We'll sort locally to avoid mandatory index requirement during setup.
-        const q = query(
-            collection(db, 'bookings'),
-            where('uid', '==', userData.uid)
-        )
-
-        getDocs(q)
-            .then(snap => {
-                const results = snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }))
-                // Sort by createdAt desc (newest first)
-                results.sort((a, b) => {
-                    const tA = a.createdAt?.seconds || 0
-                    const tB = b.createdAt?.seconds || 0
-                    return tB - tA
-                })
-                setTickets(results)
-            })
-            .catch(err => {
-                console.error('[RailwayCard] Bookings fetch failed:', err)
-                setTicketsErr(err.message.includes('index')
-                    ? 'Firestore Index Building... Check console for link.'
-                    : 'Failed to load tickets.')
-            })
-            .finally(() => setTicketsLoading(false))
-    }, [userData?.uid])
-
-    async function handleSignOut() {
-        await signOut(auth)
-        setStep(STEP_CONNECT)
-        setCardData(null)
-        setUserData(null)
-    }
-
-    if (!authChecked) {
-        return (
-            <div className="flex items-center justify-center min-h-64">
-                <Loader2 size={28} className="animate-spin text-[#2F80ED]" />
-            </div>
-        )
-    }
-
-    // ── Auth gate ─────────────────────────────────────────────────────────────
-    if (step === STEP_CONNECT) {
-        return <ConnectStep onNext={data => { setCardData(data); setStep(STEP_SIGNIN) }} />
-    }
-
-    if (step === STEP_SIGNIN) {
-        return (
-            <GoogleSignInStep
-                cardData={cardData}
-                onSuccess={data => { setUserData(data); setStep(STEP_DONE) }}
-            />
-        )
-    }
-
-    // ── Authenticated card UI ─────────────────────────────────────────────────
-    const maskedCard = userData?.cardNo
-        ? '•••• ' + userData.cardNo.slice(-4)
-        : '•••• 0000'
-
+    // â”€â”€ Authenticated card UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     return (
         <div className="space-y-6">
-            {/* ── Page Header ── */}
+            {/* â”€â”€ Page Header â”€â”€ */}
             <div className="flex items-start justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-[#F0F6FC]">Railway Card</h1>
@@ -570,7 +423,7 @@ export default function RailwayCard() {
                 </button>
             </div>
 
-            {/* ── Verified badge with Google avatar ── */}
+            {/* â”€â”€ Verified badge â”€â”€ */}
             <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-[#238636]/10 border border-[#238636]/25 w-fit">
                 {userData?.photo ? (
                     <img src={userData.photo} alt={userData.name} className="w-6 h-6 rounded-full ring-1 ring-[#238636]/40" />
@@ -578,10 +431,10 @@ export default function RailwayCard() {
                     <CheckCircle2 size={13} className="text-[#238636]" />
                 )}
                 <span className="text-xs font-bold text-[#238636]">Google Verified</span>
-                <span className="text-xs text-[#484F58]">· {userData?.name}</span>
+                <span className="text-xs text-[#484F58]">Â· {userData?.name}</span>
             </div>
 
-            {/* ── Card Visual ── */}
+            {/* â”€â”€ Card Visual â”€â”€ */}
             <div className="relative w-full max-w-sm mx-auto sm:mx-0">
                 <div className="relative overflow-hidden rounded-2xl p-6 select-none"
                     style={{
@@ -602,9 +455,10 @@ export default function RailwayCard() {
                         </div>
                     </div>
 
+                    {/* ESP device ID on card */}
                     <div className="relative z-10 mb-6">
-                        <p className="text-xs text-blue-200/60 mb-1"></p>
-                        <p className="text-4xl font-bold text-white tracking-tight">Train Card</p>
+                        <p className="text-[10px] text-blue-200/50 uppercase tracking-widest mb-1">ESP Device ID</p>
+                        <p className="text-2xl font-black text-white font-mono tracking-tight">RCARD0000011</p>
                     </div>
 
                     <div className="flex items-end justify-between relative z-10">
@@ -613,20 +467,21 @@ export default function RailwayCard() {
                             <p className="text-sm font-semibold text-white truncate max-w-[140px]">{userData?.name}</p>
                         </div>
                         <div className="text-right">
-                            <p className="text-xs text-blue-200/50">Card No.</p>
-                            <p className="text-sm font-mono text-white">{maskedCard}</p>
+                            <p className="text-xs text-blue-200/50">BLE Status</p>
+                            <p className={`text-sm font-bold ${bleConnected ? 'text-green-300' : 'text-blue-200/50'}`}>
+                                {bleConnected ? 'â— Connected' : 'â—‹ Not paired'}
+                            </p>
                         </div>
                     </div>
 
                     <div className="absolute top-6 right-6">
-                        <CreditCard size={28} className="text-blue-100/30" />
+                        <Bluetooth size={28} className="text-blue-100/20" />
                     </div>
                 </div>
             </div>
 
-            {/* ── Quick Actions ── */}
+            {/* â”€â”€ Quick Actions â”€â”€ */}
             <div className="grid grid-cols-3 gap-3">
-                {/* View Booked Tickets — toggles the panel below */}
                 <button
                     id="quick-view-tickets"
                     onClick={() => setTicketsOpen(o => !o)}
@@ -640,7 +495,6 @@ export default function RailwayCard() {
                     <span className="text-xs font-semibold text-[#8B949E] group-hover:text-[#F0F6FC] text-center leading-tight transition-colors">View Booked Tickets</span>
                 </button>
 
-                {/* Book Tickets → /book (GeneralTicket) */}
                 <button
                     id="quick-book-ticket"
                     onClick={() => navigate('/book')}
@@ -651,7 +505,6 @@ export default function RailwayCard() {
                     <span className="text-xs font-semibold text-[#8B949E] group-hover:text-[#F0F6FC] text-center leading-tight transition-colors">Book Tickets</span>
                 </button>
 
-                {/* Favourite Routes */}
                 <button
                     id="quick-fav-routes"
                     className="flex flex-col items-center gap-2.5 p-4 rounded-xl bg-[#161B22] border border-[#FACC15]/20 hover:bg-[#1e1c10] hover:border-[#FACC15]/50 transition-all duration-200 group">
@@ -662,10 +515,9 @@ export default function RailwayCard() {
                 </button>
             </div>
 
-            {/* ── Booked Tickets Panel ── */}
+            {/* â”€â”€ Booked Tickets Panel â”€â”€ */}
             {ticketsOpen && (
                 <div id="booked-tickets-panel" className="bg-[#161B22] border border-[#21262D] rounded-2xl overflow-hidden">
-                    {/* Panel header */}
                     <div className="flex items-center justify-between px-5 py-4 border-b border-[#21262D]">
                         <div className="flex items-center gap-2">
                             <ClipboardList size={16} className="text-[#2F80ED]" />
@@ -686,7 +538,6 @@ export default function RailwayCard() {
                         </div>
                     </div>
 
-                    {/* Ticket list */}
                     <div className="p-4 space-y-3">
                         {ticketsLoading && (
                             <div className="flex items-center justify-center py-8">
@@ -710,19 +561,163 @@ export default function RailwayCard() {
                                 <button
                                     onClick={() => navigate('/book')}
                                     className="text-xs font-bold text-[#2F80ED] hover:underline flex items-center gap-1">
-                                    Book your first ticket →
+                                    Book your first ticket â†’
                                 </button>
                             </div>
                         )}
 
-                        {!ticketsLoading && !ticketsErr && tickets.map(b => (
-                            <TicketCard key={b.firestoreId ?? b.id} booking={b} />
-                        ))}
+                        {!ticketsLoading && !ticketsErr && tickets.map(b => {
+                            const tId = b.id || b.firestoreId
+                            const wStatus = writeResult[tId]
+                            return (
+                                <div key={b.firestoreId ?? b.id} className="space-y-2">
+                                    <TicketCard booking={b} />
+                                    <div className="flex items-center justify-end gap-2">
+                                        {wStatus === 'ok' && (
+                                            <span className="flex items-center gap-1 text-[11px] text-[#238636] font-bold">
+                                                <CheckCircle2 size={12} /> Written to card
+                                            </span>
+                                        )}
+                                        {wStatus === 'err' && (
+                                            <span className="flex items-center gap-1 text-[11px] text-[#EF4444]">
+                                                <AlertTriangle size={12} /> Write failed â€” connect card first
+                                            </span>
+                                        )}
+                                        <button
+                                            disabled={writingId === tId}
+                                            onClick={async () => {
+                                                setWritingId(tId)
+                                                setWriteResult(prev => ({ ...prev, [tId]: undefined }))
+                                                try {
+                                                    await writeToCard(`TRAQ:TKT:${tId}`)
+                                                    setWriteResult(prev => ({ ...prev, [tId]: 'ok' }))
+                                                } catch {
+                                                    setWriteResult(prev => ({ ...prev, [tId]: 'err' }))
+                                                } finally {
+                                                    setWritingId(null)
+                                                }
+                                            }}
+                                            className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all ${bleConnected
+                                                ? 'border-[#2F80ED]/40 text-[#2F80ED] hover:bg-[#2F80ED]/10'
+                                                : 'border-[#21262D] text-[#484F58] cursor-not-allowed opacity-50'
+                                                }`}>
+                                            {writingId === tId
+                                                ? <><Loader2 size={11} className="animate-spin" /> Writingâ€¦</>
+                                                : <><BluetoothConnected size={11} /> Write to Card</>}
+                                        </button>
+                                    </div>
+                                </div>
+                            )
+                        })}
                     </div>
                 </div>
             )}
 
-            {/* ── Card Details ── */}
+            {/* â”€â”€ RCARD0000011 Bluetooth Panel â”€â”€ */}
+            <div className="bg-[#161B22] border border-[#21262D] rounded-xl p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-bold text-[#F0F6FC] flex items-center gap-2">
+                        <Bluetooth size={15} className="text-[#2F80ED]" /> RCARD0000011
+                    </h2>
+                    {bleStatus === 'auto' && (
+                        <span className="flex items-center gap-1.5 text-[10px] text-[#484F58]">
+                            <Loader2 size={11} className="animate-spin" /> Auto-connectingâ€¦
+                        </span>
+                    )}
+                    {bleConnected && bleStatus !== 'auto' && (
+                        <span className="flex items-center gap-1.5 text-[10px] font-bold text-[#238636] bg-[#238636]/10 border border-[#238636]/25 px-2 py-0.5 rounded-full">
+                            <BluetoothConnected size={11} /> CONNECTED
+                        </span>
+                    )}
+                </div>
+
+                {bleConnected ? (
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#238636]/8 border border-[#238636]/30">
+                            <BluetoothConnected size={18} className="text-[#238636] shrink-0" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-xs font-bold text-[#238636]">Paired</p>
+                                <p className="text-[11px] text-[#8B949E] font-mono">{bleName || 'RCARD0000011'}</p>
+                            </div>
+                            <button
+                                onClick={() => { disconnectCard(); refreshBleStatus(); setBleSendStatus('idle') }}
+                                className="text-[10px] text-[#484F58] hover:text-[#DA3633] border border-[#21262D] hover:border-[#DA3633]/40 px-2 py-1.5 rounded-lg transition-all flex items-center gap-1">
+                                <BluetoothOff size={11} /> Disconnect
+                            </button>
+                        </div>
+
+                        {bleSendStatus === 'sending' && (
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[11px]">
+                                    <span className="flex items-center gap-1.5 text-[#2F80ED]">
+                                        <Loader2 size={11} className="animate-spin" />
+                                        Sending tickets to RCARD0000011â€¦
+                                    </span>
+                                    <span className="text-[#8B949E] font-mono">{bleSendProgress.sent}/{bleSendProgress.total}</span>
+                                </div>
+                                <div className="w-full bg-[#21262D] rounded-full h-1.5 overflow-hidden">
+                                    <div className="h-full bg-[#2F80ED] rounded-full transition-all duration-300"
+                                        style={{ width: bleSendProgress.total ? `${(bleSendProgress.sent / bleSendProgress.total) * 100}%` : '0%' }} />
+                                </div>
+                            </div>
+                        )}
+
+                        {bleSendStatus === 'done' && (
+                            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#238636]/8 border border-[#238636]/25">
+                                <CheckCircle2 size={14} className="text-[#238636] shrink-0" />
+                                <p className="text-[11px] text-[#238636] font-medium">
+                                    {bleSendProgress.total} ticket{bleSendProgress.total !== 1 ? 's' : ''} written to RCARD0000011
+                                </p>
+                            </div>
+                        )}
+
+                        {bleSendStatus === 'error' && bleSendErr && (
+                            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#DA3633]/8 border border-[#DA3633]/25">
+                                <AlertTriangle size={13} className="text-[#DA3633] shrink-0" />
+                                <p className="text-[11px] text-[#DA3633]">{bleSendErr}</p>
+                            </div>
+                        )}
+
+                        {tickets.length > 0 && bleSendStatus !== 'sending' && (
+                            <button
+                                onClick={() => sendAllTickets()}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#2F80ED]/30 bg-[#2F80ED]/8 hover:bg-[#2F80ED]/15 hover:border-[#2F80ED]/60 text-[#2F80ED] text-xs font-bold transition-all">
+                                <RefreshCw size={12} />
+                                {bleSendStatus === 'done' ? 'Re-send All Tickets' : `Send ${tickets.length} Ticket${tickets.length !== 1 ? 's' : ''} to Card`}
+                            </button>
+                        )}
+
+                        {tickets.length === 0 && bleSendStatus === 'idle' && (
+                            <p className="text-[11px] text-[#484F58]">No booked tickets yet. Ticket data will be pushed automatically after your first booking.</p>
+                        )}
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#0D1117] border border-[#21262D]">
+                            <BluetoothOff size={18} className="text-[#484F58] shrink-0" />
+                            <div className="flex-1">
+                                <p className="text-xs font-bold text-[#484F58]">RCARD0000011 not connected</p>
+                                <p className="text-[11px] text-[#484F58]">Click below to connect. Browser will show a picker â€” select RCARD0000011. After the first connection, it reconnects silently.</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={handleBleConnect}
+                            disabled={bleStatus === 'connecting'}
+                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#2F80ED]/30 bg-[#2F80ED]/8 hover:bg-[#2F80ED]/15 hover:border-[#2F80ED]/60 text-[#2F80ED] text-sm font-bold transition-all disabled:opacity-50">
+                            {bleStatus === 'connecting'
+                                ? <><Loader2 size={14} className="animate-spin" /> Connectingâ€¦</>
+                                : <><Bluetooth size={14} /> Connect to RCARD0000011</>}
+                        </button>
+                        {bleStatus === 'error' && bleErr && (
+                            <p className="flex items-center gap-1.5 text-xs text-[#EF4444]">
+                                <AlertTriangle size={11} className="shrink-0" />{bleErr}
+                            </p>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* â”€â”€ Card Details placeholder â”€â”€ */}
             <div className="bg-[#161B22] border border-[#21262D] rounded-xl p-5">
                 <h2 className="text-base font-semibold text-[#F0F6FC] mb-4">Card Settings &amp; Details</h2>
                 <PlaceholderCard message="Card management, auto-recharge, and limits coming in next phase" />

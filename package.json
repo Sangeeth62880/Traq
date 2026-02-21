@@ -1,0 +1,27 @@
+{
+  "name": "traq-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.1.0",
+  "scripts": {
+    "dev:backend": "turbo run dev --filter=@traq/backend",
+    "dev:dashboard": "turbo run dev --filter=dashboard",
+    "dev:simulator": "turbo run dev --filter=@traq/simulator",
+    "build": "turbo run build",
+    "test:backend": "turbo run test --filter=@traq/backend",
+    "test:dashboard": "turbo run test --filter=dashboard",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:migrate": "pnpm --filter @traq/backend run db:migrate",
+    "simulate": "pnpm --filter @traq/simulator run start",
+    "clean": "turbo run clean"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

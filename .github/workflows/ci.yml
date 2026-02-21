@@ -1,0 +1,140 @@
+# ==============================================================================
+# TRAQ CI/CD Pipeline
+# ==============================================================================
+
+name: TRAQ CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Lint & Typecheck — JS/TS packages
+  # --------------------------------------------------------------------------
+  lint-typecheck:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+  # --------------------------------------------------------------------------
+  # Test — Backend (with Docker services)
+  # --------------------------------------------------------------------------
+  test-backend:
+    name: Test Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Install Native Dependencies (Redis & Influx)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y redis-server
+          curl -sL https://repos.influxdata.com/influxdata-archive_compat.key | gpg --dearmor | sudo tee /usr/share/keyrings/influxdb-archive-keyring.gpg >/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/influxdb-archive-keyring.gpg] https://repos.influxdata.com/debian stable main" | sudo tee /etc/apt/sources.list.d/influxdb.list
+          sudo apt-get update
+          sudo apt-get install -y influxdb2
+          sudo systemctl start redis-server
+          sudo systemctl start influxdb
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run backend tests
+        run: pnpm test:backend
+        env:
+          SQLITE_DB_PATH: ./var/traq_test.db
+          INFLUX_URL: http://localhost:8086
+          INFLUX_TOKEN: my-super-secret-auth-token
+          INFLUX_ORG: traq_org
+          INFLUX_BUCKET: traq_telemetry
+          REDIS_URL: redis://localhost:6379
+
+  # --------------------------------------------------------------------------
+  # Test — Flutter Mobile App
+  # --------------------------------------------------------------------------
+  test-flutter:
+    name: Test Flutter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.22.0"
+
+      - name: Install dependencies
+        run: cd apps/mobile && flutter pub get
+
+      - name: Analyze
+        run: cd apps/mobile && flutter analyze
+
+      - name: Test
+        run: cd apps/mobile && flutter test --coverage
+
+  # --------------------------------------------------------------------------
+  # Build — Backend + Dashboard
+  # --------------------------------------------------------------------------
+  build-backend:
+    name: Build Backend & Dashboard
+    runs-on: ubuntu-latest
+    needs: [lint-typecheck]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build

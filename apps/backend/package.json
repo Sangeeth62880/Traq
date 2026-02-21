@@ -1,0 +1,45 @@
+{
+    "name": "@traq/backend",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "dev": "tsx watch src/server.ts",
+        "build": "tsc",
+        "start": "node dist/server.js",
+        "test": "vitest run",
+        "lint": "tsc --noEmit",
+        "typecheck": "tsc --noEmit",
+        "clean": "rm -rf dist coverage",
+        "db:migrate": "tsx src/db/migrate.ts"
+    },
+    "dependencies": {
+        "@fastify/cors": "^9.0.0",
+        "@fastify/helmet": "^11.1.0",
+        "@fastify/rate-limit": "^9.1.0",
+        "@influxdata/influxdb-client": "^1.35.0",
+        "@influxdata/influxdb-client-apis": "^1.35.0",
+        "@types/better-sqlite3": "^7.6.13",
+        "bcrypt": "^6.0.0",
+        "better-sqlite3": "^12.6.2",
+        "dotenv": "^16.4.0",
+        "fastify": "^4.28.0",
+        "fastify-plugin": "^5.1.0",
+        "firebase-admin": "^12.3.0",
+        "ioredis": "^5.4.0",
+        "mqtt": "^5.8.0",
+        "pino": "^9.2.0",
+        "pino-pretty": "^11.2.0",
+        "qrcode": "^1.5.0",
+        "socket.io": "^4.7.0",
+        "zod": "^3.23.0"
+    },
+    "devDependencies": {
+        "@traq/shared-types": "workspace:*",
+        "@types/bcrypt": "^6.0.0",
+        "@types/node": "^20.14.0",
+        "@types/qrcode": "^1.5.0",
+        "tsx": "^4.16.0",
+        "typescript": "^5.4.0",
+        "vitest": "^1.6.0"
+    }
+}

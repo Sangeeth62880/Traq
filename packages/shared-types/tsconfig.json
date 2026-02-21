@@ -1,0 +1,15 @@
+{
+    "extends": "../config/tsconfig.node.json",
+    "compilerOptions": {
+        "rootDir": "./src",
+        "types": [
+            "node"
+        ]
+    },
+    "include": [
+        "src/**/*"
+    ],
+    "exclude": [
+        "src/__tests__"
+    ]
+}

@@ -1,0 +1,12 @@
+{
+    "name": "@traq/config",
+    "version": "0.1.0",
+    "private": true,
+    "files": [
+        "tsconfig.base.json",
+        "tsconfig.react.json",
+        "tsconfig.node.json",
+        ".eslintrc.base.js",
+        ".prettierrc.js"
+    ]
+}

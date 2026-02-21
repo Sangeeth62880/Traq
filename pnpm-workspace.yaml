@@ -1,0 +1,7 @@
+packages:
+  - "apps/backend"
+  - "apps/dashboard"
+  - "apps/simulator"
+  - "packages/*"
+# NOTE: apps/mobile (Flutter/Dart) is NOT a pnpm workspace.
+# It is orchestrated via the root Makefile.

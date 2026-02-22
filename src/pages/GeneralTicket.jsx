@@ -5,17 +5,19 @@ import {
     Loader2, ArrowLeftRight, Train, CheckCircle2,
     Trash2, Printer, CreditCard, AlertTriangle, ShieldCheck,
     TrendingUp, Search, ChevronDown, ChevronUp, Tag, Layers,
+    Bluetooth, BluetoothConnected,
 } from 'lucide-react'
 import { onAuthStateChanged } from 'firebase/auth'
 import {
     doc, getDoc, collection, addDoc, query,
     where, orderBy, getDocs, deleteDoc, serverTimestamp,
 } from 'firebase/firestore'
-import { auth, db } from '../firebase'
+import { ref, set } from 'firebase/database'
+import { auth, db, rtdb } from '../firebase'
 import { getTrainsBetween } from '../services/railRadarService'
 import { fetchTrainCrowdData } from '../services/influxService'
 import { useSensor } from '../context/SensorContext'
-import { sendTicketToCard } from '../services/wifiCardService'
+import { isBleConnected, connectBleDevice, setBleDisconnectHandler, sendTicketViaBle } from '../services/bleService'
 
 // ── Train types with per-passenger base fare ────────────────────────────────
 const TRAIN_TYPES = [
@@ -460,7 +462,28 @@ export default function GeneralTicket() {
     const [bookings, setBookings] = useState([])
     const [justBooked, setJustBooked] = useState(null)
     const [fsLoading, setFsLoading] = useState(false)
-    const [wifiSyncStatus, setWifiSyncStatus] = useState(null) // null | 'ok' | 'error'
+    const [bleConnected, setBleConnected] = useState(false)
+    const [bleLoading, setBleLoading] = useState(false)
+    const [syncStatus, setSyncStatus] = useState('idle') // idle | syncing | done | error
+    const [syncErr, setSyncErr] = useState('')
+
+    useEffect(() => {
+        setBleConnected(isBleConnected())
+        setBleDisconnectHandler(() => setBleConnected(false))
+        return () => setBleDisconnectHandler(null)
+    }, [])
+
+    async function handleBlePair() {
+        setBleLoading(true)
+        try {
+            await connectBleDevice()
+            setBleConnected(true)
+        } catch (e) {
+            console.error('[GeneralTicket] BLE Pairing failed:', e.message)
+        } finally {
+            setBleLoading(false)
+        }
+    }
 
     useEffect(() => {
         if (!cardUser) { setBookings([]); return }
@@ -544,29 +567,37 @@ export default function GeneralTicket() {
             const saved = { firestoreId: docRef.id, ...newBooking }
             setBookings(prev => [saved, ...prev])
             setJustBooked(saved)
-
-            // ── Auto-sync ticket ID to card via WiFi ─────────────────────────────
-            setWifiSyncStatus(null)
-            sendTicketToCard(ticketId)
-                .then(() => setWifiSyncStatus('ok'))
-                .catch(() => setWifiSyncStatus('error'))
-
-            setTimeout(() => setWifiSyncStatus(null), 5000)
         } catch (err) {
             console.warn('[GeneralTicket] Firestore save failed, falling back to local:', err.message)
             const local = { firestoreId: null, ...newBooking, createdAt: now.toISOString() }
             setBookings(prev => [local, ...prev])
             setJustBooked(local)
-
-            // ── Auto-sync ticket ID to card via WiFi (fallback) ──────────────────
-            setWifiSyncStatus(null)
-            sendTicketToCard(ticketId)
-                .then(() => setWifiSyncStatus('ok'))
-                .catch(() => setWifiSyncStatus('error'))
-
-            setTimeout(() => setWifiSyncStatus(null), 5000)
         } finally {
             setBooking(false)
+        }
+    }
+
+    async function handleSyncToCard() {
+        if (!justBooked?.id) return
+        setSyncStatus('syncing')
+        setSyncErr('')
+        try {
+            // ── Simultaneous write to BLE and RTDB (for verification) ──────────
+            await Promise.all([
+                sendTicketViaBle(justBooked.id),
+                set(ref(rtdb, `tickets/${justBooked.id}`), {
+                    ticketId: justBooked.id,
+                    from: justBooked.fromName || justBooked.from?.toLowerCase(),
+                    to: justBooked.toName || justBooked.to?.toLowerCase(),
+                    verified: false
+                })
+            ])
+            setSyncStatus('done')
+            // Reset after success
+            setTimeout(() => setSyncStatus('idle'), 3000)
+        } catch (e) {
+            setSyncStatus('error')
+            setSyncErr(e.message || 'Sync failed')
         }
     }
 
@@ -681,6 +712,34 @@ export default function GeneralTicket() {
                     <span className="text-lg font-black" style={{ color: selectedType.color }}>₹{fare}</span>
                 </div>
 
+                {/* Bluetooth Pairing Required */}
+                {!bleConnected && (
+                    <div className="p-4 rounded-xl border border-blue-500/20 bg-blue-500/5 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Bluetooth size={16} className="text-blue-500" />
+                                <span className="text-xs font-bold text-blue-500 uppercase tracking-wider">Bluetooth Pair Required</span>
+                            </div>
+                            <span className="text-[10px] text-blue-500/70 font-medium">Railway Card not found</span>
+                        </div>
+                        <p className="text-[11px] text-blue-500/60 leading-relaxed">
+                            You must pair your Railway Card via Bluetooth before booking a ticket. This ensures the ticket is synced to your card immediately.
+                        </p>
+                        <button onClick={handleBlePair} disabled={bleLoading}
+                            className="w-full py-2 rounded-lg border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 text-[11px] font-bold transition-all disabled:opacity-50">
+                            {bleLoading ? <><Loader2 size={12} className="animate-spin inline mr-2" /> Searching Card...</> : 'Pair Railway Card via BLE'}
+                        </button>
+                    </div>
+                )}
+
+                {bleConnected && (
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/5 border border-green-500/20 text-green-500">
+                        <BluetoothConnected size={15} />
+                        <span className="text-xs font-bold uppercase tracking-wider">Card Ready</span>
+                        <span className="ml-auto text-[10px] opacity-70">RCARD0000011 Connected</span>
+                    </div>
+                )}
+
                 {/* Buttons row */}
                 <div className="flex gap-2">
                     <button onClick={handleSearch} disabled={!isFormValid || searching}
@@ -688,11 +747,11 @@ export default function GeneralTicket() {
                         {searching ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
                         {searching ? 'Searching…' : 'View Trains on Route'}
                     </button>
-                    <button onClick={handleBook} disabled={!isFormValid || booking}
+                    <button onClick={handleBook} disabled={!isFormValid || booking || !bleConnected}
                         className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl text-white text-sm font-bold transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-[0_0_24px_rgba(47,128,237,0.4)]"
                         style={{
-                            background: isFormValid ? `linear-gradient(135deg, ${selectedType.color}, ${selectedType.color}cc)` : '#21262D',
-                            boxShadow: isFormValid ? `0 0 20px ${selectedType.color}30` : 'none',
+                            background: (isFormValid && bleConnected) ? `linear-gradient(135deg, ${selectedType.color}, ${selectedType.color}cc)` : '#21262D',
+                            boxShadow: (isFormValid && bleConnected) ? `0 0 20px ${selectedType.color}30` : 'none',
                         }}>
                         {booking ? <Loader2 size={16} className="animate-spin" /> : <Ticket size={16} />}
                         {booking ? 'Booking…' : `Confirm & Book · ₹${fare}`}
@@ -701,6 +760,9 @@ export default function GeneralTicket() {
 
                 {!isFormValid && (
                     <p className="text-[11px] text-[#484F58] text-center">Select From, To station and a date to proceed</p>
+                )}
+                {isFormValid && !bleConnected && (
+                    <p className="text-[11px] text-blue-500/70 text-center font-medium animate-pulse">Please pair your card to enable booking</p>
                 )}
             </div>
 
@@ -829,20 +891,7 @@ export default function GeneralTicket() {
                 </div>
             )}
 
-            {/* ── WiFi sync status toast ── */}
-            {wifiSyncStatus && (
-                <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-medium transition-all animate-in fade-in ${wifiSyncStatus === 'ok'
-                    ? 'bg-[#238636]/10 border-[#238636]/30 text-[#238636]'
-                    : 'bg-[#DA3633]/10 border-[#DA3633]/30 text-[#DA3633]'
-                    }`}>
-                    {wifiSyncStatus === 'ok' ? (
-                        <><CheckCircle2 size={15} className="shrink-0" /> Ticket synced to card successfully via WiFi!</>
-                    ) : (
-                        <><AlertTriangle size={15} className="shrink-0" /> Sync failed — ensure you're on 'RAILCARD' WiFi.
-                        </>
-                    )}
-                </div>
-            )}
+
 
             {/* ── Step 3: Ticket Preview ── */}
             {justBooked && (
@@ -863,6 +912,30 @@ export default function GeneralTicket() {
                         </div>
                     </div>
                     <TicketCard booking={justBooked} />
+
+                    {/* Quick Sync Button */}
+                    <div className="pt-2">
+                        <button
+                            onClick={handleSyncToCard}
+                            disabled={syncStatus === 'syncing'}
+                            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold border transition-all ${syncStatus === 'done'
+                                ? 'bg-green-500/10 border-green-500/40 text-green-500'
+                                : syncStatus === 'error'
+                                    ? 'bg-red-500/10 border-red-500/40 text-red-500'
+                                    : 'bg-blue-500/10 border-blue-500/40 text-blue-500 hover:bg-blue-500/20'
+                                } disabled:opacity-50`}
+                        >
+                            {syncStatus === 'syncing' ? <Loader2 size={16} className="animate-spin" /> :
+                                syncStatus === 'done' ? <CheckCircle2 size={16} /> :
+                                    syncStatus === 'error' ? <AlertTriangle size={16} /> :
+                                        <Bluetooth size={16} />}
+
+                            {syncStatus === 'syncing' ? 'Syncing to Card...' :
+                                syncStatus === 'done' ? 'Ticket Cycled to Card!' :
+                                    syncStatus === 'error' ? `Error: ${syncErr}` :
+                                        'Sync Ticket to Card via BLE'}
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

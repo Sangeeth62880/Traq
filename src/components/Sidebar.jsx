@@ -62,7 +62,7 @@ export default function Sidebar({ isOpen, onClose }) {
                 aria-label="Sidebar navigation"
             >
                 {/* ── User Greeting ── */}
-                <div className="px-5 pt-5 pb-4 border-b border-[#21262D]">
+                {/* <div className="px-5 pt-5 pb-4 border-b border-[#21262D]">
                     <p className="text-xs text-[#484F58] font-medium uppercase tracking-widest mb-1">
                         {getGreeting()}
                     </p>
@@ -78,7 +78,7 @@ export default function Sidebar({ isOpen, onClose }) {
                             Active
                         </span>
                     </div>
-                </div>
+                </div> */}
 
                 {/* ── Navigation Links ── */}
                 <nav className="flex-1 overflow-y-auto no-scrollbar py-3 px-2">

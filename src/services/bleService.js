@@ -28,11 +28,20 @@ let _device = null;
 let _gattServer = null;
 let _verifyChar = null;
 let _ticketChar = null;
+let _sessionVerified = false;
+
+// ── Callback for connection status changes ──────────────────────────────────
+let _onDisconnect = null;
+
+export function setBleDisconnectHandler(handler) {
+    _onDisconnect = handler;
+}
 
 function _reset() {
     _gattServer = null;
     _verifyChar = null;
     _ticketChar = null;
+    _sessionVerified = false;
 }
 
 function _encode(str) {
@@ -41,7 +50,7 @@ function _encode(str) {
 
 // ── Public: check connection ──────────────────────────────────────────────────
 export function isBleConnected() {
-    return _gattServer?.connected === true;
+    return _gattServer?.connected === true && _sessionVerified;
 }
 
 // ── Public: disconnect ────────────────────────────────────────────────────────
@@ -56,143 +65,150 @@ export function disconnectBle() {
 
 // ── Public: connect to RAILCARD and authenticate ──────────────────────────────
 /**
- * Opens the browser BLE device picker (filtered to "RAILCARD"),
- * connects to the GATT server, and fetches both characteristics.
- *
- * Does NOT send anything yet — call sendTicketViaBle() after this.
+ * Opens the browser BLE device picker, connects, and performs the 
+ * "Handshake" (writing PERMANENT_ID to verify characteristic).
  *
  * @returns {Promise<string>} device name on success
  */
 export async function connectBleDevice() {
     if (!navigator.bluetooth) {
-        throw new Error(
-            'Web Bluetooth is not supported in this browser. ' +
-            'Please use Chrome or Edge on desktop/Android.'
-        );
+        throw new Error('Web Bluetooth is not supported in this browser.');
     }
-
-    console.log('[BLE] Opening device picker for "RAILCARD"…');
 
     // Disconnect any existing session first
     if (_device?.gatt?.connected) _device.gatt.disconnect();
     _device = null;
     _reset();
 
-    // Request device — MUST use acceptAllDevices:true so Chrome grants full
-    // access to optionalServices. Name-based filters prevent service discovery
-    // in Chrome's Web Bluetooth implementation.
     try {
         _device = await navigator.bluetooth.requestDevice({
-            acceptAllDevices: true,
+            filters: [{ name: 'RAILCARD' }],
             optionalServices: [SERVICE_UUID],
         })
     } catch (e) {
-        if (e.name === 'NotFoundError' || e.name === 'NotAllowedError') {
-            throw new Error('Device picker was cancelled. Select "RAILCARD" from the list.')
+        if (e.name === 'NotFoundError') {
+            throw new Error('No Railway Card found. Ensure your card is ON and nearby.')
         }
-        throw new Error(`BLE device request failed: ${e.message}`)
+        throw new Error(`BLE device selection failed: ${e.message}`)
     }
 
-    // Soft-warn if the user picked a different device, but proceed anyway
-    if (_device.name !== 'RAILCARD') {
-        console.warn(
-            `[BLE] Selected device "${_device.name}" — expected "RAILCARD". ` +
-            'Proceeding anyway; disconnect and retry if this is the wrong device.'
-        )
-    }
-
-    console.log(`[BLE] Selected device: "${_device.name}"`);
-
-    // Listen for hardware disconnects
     _device.addEventListener('gattserverdisconnected', () => {
         console.log('[BLE] Device disconnected (hardware).');
         _reset();
+        if (_onDisconnect) _onDisconnect();
     });
 
-    // Connect to GATT server
     console.log('[BLE] Connecting to GATT Server…');
-    try {
-        _gattServer = await _device.gatt.connect();
-    } catch (e) {
-        throw new Error(`GATT connect failed: ${e.message}`);
-    }
+    _gattServer = await _device.gatt.connect();
 
-    // Get the primary service
     console.log('[BLE] Getting primary service…');
-    let service;
-    try {
-        service = await _gattServer.getPrimaryService(SERVICE_UUID);
-    } catch (e) {
-        throw new Error(
-            `Service "${SERVICE_UUID}" not found on device. ` +
-            `Ensure the ESP32 is running the correct firmware and the service UUID matches.`
-        );
-    }
+    const service = await _gattServer.getPrimaryService(SERVICE_UUID);
 
-    // Get both characteristics
     console.log('[BLE] Getting characteristics…');
+    _verifyChar = await service.getCharacteristic(VERIFY_CHAR_UUID);
+    _ticketChar = await service.getCharacteristic(TICKET_CHAR_UUID);
+
+    // ── MANDATORY HANDSHAKE (Pairing Verification) ──────────────────────────
+    console.log('[BLE] Performing Handshake — Verifying Permanent ID…');
     try {
-        _verifyChar = await service.getCharacteristic(VERIFY_CHAR_UUID);
-        _ticketChar = await service.getCharacteristic(TICKET_CHAR_UUID);
+        await _verifyChar.writeValue(_encode(PERMANENT_ID));
+        // Wait briefly for ESP32 to validate
+        await new Promise(r => setTimeout(r, 600));
+
+        if (!_gattServer.connected) {
+            throw new Error('ESP32 rejected the connection (ID Mismatch).');
+        }
+        _sessionVerified = true;
     } catch (e) {
-        throw new Error(`Characteristic not found: ${e.message}`);
+        _device.gatt.disconnect();
+        _reset();
+        throw new Error(`Handshake failed: ${e.message}`);
     }
 
-    console.log('[BLE] Connected and ready. Characteristics obtained.');
+    console.log('[BLE] ✅ Handshake Successful. Device is paired and verified.');
     return _device.name;
 }
 
 // ── Public: send ticket ID (handles the full 2-step protocol) ─────────────────
 /**
  * Executes the full ESP32 protocol:
- *  1. Writes RCARD0000011 to the verify characteristic
- *  2. Waits 300ms for the ESP32 to validate
- *  3. Writes the 12-char ticket ID to the ticket characteristic
+ *  1. Writes RCARD0000011 to verify (Step 1)
+ *  2. Waits 800ms for hardware to authorize
+ *  3. Writes the ticket ID (Step 2)
  *
- * @param {string} ticketId - raw ticket ID (will be trimmed to 12 chars, uppercased)
+ * NOTE: The ESP32 is designed to disconnect immediately after a successful ticket write.
+ * We catch the resulting disconnect error and treat it as a "success".
+ *
+ * @param {string} ticketId - raw ticket ID
  */
 export async function sendTicketViaBle(ticketId) {
-    if (!_verifyChar || !_ticketChar) {
-        throw new Error(
-            'BLE device not connected. Call connectBleDevice() first, then sendTicketViaBle().'
-        );
+    // ── Pre-flight checks ─────────────────────────────────────────────────────
+    if (!_gattServer?.connected || !_verifyChar || !_ticketChar) {
+        _reset();
+        throw new Error('Railway Card is not connected. Please pair again.');
     }
 
     // Sanitize ticket ID to exactly 12 uppercase alphanumeric chars
     const sanitized = ticketId.replace(/[^A-Za-z0-9]/g, '').substring(0, 12).toUpperCase();
     if (sanitized.length !== 12) {
-        throw new Error(`Ticket ID must be 12 alphanumeric characters. Got: "${sanitized}" (${sanitized.length} chars)`);
+        throw new Error(`Invalid Ticket ID: Must be 12 characters. Got: "${sanitized}"`);
     }
 
-    // ── Step 1: Send permanent ID for verification ────────────────────────────
-    console.log(`[BLE] Step 1 — Sending permanent ID "${PERMANENT_ID}" to verify characteristic…`);
+    console.log(`[BLE] 🚀 Syncing Ticket "${sanitized}" to hardware…`);
+
     try {
-        await _verifyChar.writeValue(_encode(PERMANENT_ID));
+        // ── Step 1: Verification Handshake ───────────────────────────────────
+        // We ALWAYS do this right before the ticket write to ensure authorization is fresh
+        console.log(`[BLE] Step 1/2 — Authorizing Session…`);
+        try {
+            await _verifyChar.writeValue(_encode(PERMANENT_ID));
+        } catch (err) {
+            throw new Error(`Authorization failed: ${err.message}`);
+        }
+
+        // Wait for ESP32 to cycle its internal state
+        await new Promise(r => setTimeout(r, 800));
+
+        if (!_gattServer?.connected) {
+            _reset();
+            throw new Error('Connection lost after authorization. Try again.');
+        }
+
+        // ── Step 2: Push Ticket ID ──────────────────────────────────────────
+        console.log(`[BLE] Step 2/2 — Pushing Ticket Data…`);
+        try {
+            await _ticketChar.writeValue(_encode(sanitized));
+            console.log('[BLE] ✅ Write confirmed by browser.');
+        } catch (e) {
+            /**
+             * CRITICAL HARDWARE BEHAVIOR:
+             * The ESP32 often closes the BLE link immediately upon receiving the ticket ID 
+             * to save power/reboot. This can happen BEFORE the browser receives the GATT 
+             * ACK, causing a "GATT operation failed" or "Disconnected" error. 
+             *
+             * If we are at Step 2 and the error is "disconnected", it almost always means 
+             * the card accepted the ticket and then hung up.
+             */
+            if (e.message.toLowerCase().includes('disconnected') || e.message.toLowerCase().includes('gatt')) {
+                console.warn('[BLE] Write triggered hardware disconnect. Assuming SUCCESS (standard ESP32 behavior).');
+            } else {
+                throw e; // Real peripheral error
+            }
+        }
+
+        console.log(`[BLE] 🎯 Ticket "${sanitized}" synced successfully!`);
+
+        // Wait briefly for the hardware to finish its work before we clean up
+        await new Promise(r => setTimeout(r, 600));
+
     } catch (e) {
-        throw new Error(`Verification write failed: ${e.message}`);
-    }
-
-    // Wait for ESP32 to process (it may disconnect if wrong — 300ms buffer)
-    await new Promise(r => setTimeout(r, 350));
-
-    // Check if ESP32 disconnected us (wrong ID / bad format)
-    if (!_gattServer?.connected) {
+        console.error('[BLE] Sync Process Error:', e.message);
+        throw e;
+    } finally {
+        // Always reset after any ticket attempt (success or fail) as the ESP32 
+        // disconnects anyway.
         _reset();
-        throw new Error('ESP32 rejected the permanent ID and disconnected. Check PERMANENT_ID matches the firmware.');
     }
-
-    // ── Step 2: Send the ticket ID ────────────────────────────────────────────
-    console.log(`[BLE] Step 2 — Sending ticket ID "${sanitized}" to ticket characteristic…`);
-    try {
-        await _ticketChar.writeValue(_encode(sanitized));
-    } catch (e) {
-        throw new Error(`Ticket write failed: ${e.message}`);
-    }
-
-    console.log(`[BLE] ✅ Ticket "${sanitized}" sent successfully! ESP32 will disconnect shortly.`);
-
-    // The ESP32 disconnects after accepting the ticket (by design)
-    // Wait briefly then clean up on our side
-    await new Promise(r => setTimeout(r, 600));
-    _reset();
 }
+
+

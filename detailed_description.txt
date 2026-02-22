@@ -1,0 +1,39 @@
+# Traq: Next-Generation Smart Railway Ticketing System
+
+## Project Overview
+Traq is an advanced, hardware-integrated railway ecosystem designed to modernize the unreserved (General) ticketing process in India. It bridges the gap between digital convenience and physical infrastructure by replacing traditional paper tickets with a smart, Bluetooth-enabled "Railway Card" (ESP32-based).
+
+## The Problem It Solves
+1. **Queuing and Paper Waste:** Eliminates the need for long queues at UTS counters and the environmental impact of physical thermal paper tickets.
+2. **Offline Verification:** Unlike QR-based tickets that require a stable internet connection on the user's phone, Traq stores the ticket ID physically on a dedicated card. This ensures verification works even in areas with poor network coverage (common on tracks and in remote stations).
+3. **Crowd Management:** Address the problem of platform and coach overcrowding by providing real-time crowd density data to passengers before they even board.
+4. **Ticket Loss/Damage:** Physical paper tickets are easily lost or damaged; a durable smart card provides a more resilient alternative.
+
+## How It Works
+
+### 1. Digital Platform (React + Firebase)
+The Traq web application serves as the command center. It uses **Firebase Authentication** for secure user profiles and **Cloud Firestore** to maintain a permanent history of all user bookings.
+
+### 2. Hardware Integration (Web Bluetooth / BLE)
+The core innovation is the link between the browser and the physical **ESP32 Railway Card**. 
+- Using the **Web Bluetooth API**, the application establishes a secure connection to the card (identified as "RAILCARD").
+- A mandatory **Handshake/Authentication** process ensures only authorized Traq cards can receive tickets.
+- Once a ticket is booked, the system pushes a unique 12-character Ticket ID (e.g., TRQZ97QVWM8R) directly into the card's local memory via BLE.
+
+### 3. Real-Time Verification (Firebase RTDB)
+Simultaneously with the hardware sync, the ticket details are written to the **Firebase Realtime Database (RTDB)** with a `verified: false` status. 
+- The card acts as the "Bearer" of the token.
+- When a ticket checker taps the card (using an NFC or similar reader linked to their official app), the ID is instantly cross-referenced against the global RTDB to ensure legitimacy and prevent reuse.
+
+### 4. Live Rail Insights (RailRadar + InfluxDB)
+Traq doesn't just book tickets; it provides live intelligence:
+- **RailRadar API:** Integrated to provide real-time train status, schedules, and route information.
+- **InfluxDB:** Used to store and visualize massive streams of sensor data from train coaches, providing users with a "Live Crowd Density" map so they can choose less crowded coaches for their journey.
+
+## Technology Stack
+- **Frontend:** React.js, Tailwind CSS, Lucide Icons.
+- **Backend:** Firebase (Auth, Firestore, RTDB).
+- **Time-Series Data:** InfluxDB (Crowd Density).
+- **External APIs:** RailRadar (Train Data).
+- **Hardware Communication:** Web Bluetooth API (BLE).
+- **Hardware:** ESP32 Microcontroller (Firmware-equipped for Traq Protocol).

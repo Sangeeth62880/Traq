@@ -25,11 +25,6 @@ export default function Topbar({ onMenuToggle, isSidebarOpen }) {
                     <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-[#2F80ED]/20 group-hover:bg-[#2F80ED]/30 transition-colors duration-200">
                         <Train size={18} className="text-[#2F80ED]" />
                     </div>
-                    {/*
-            Brand name "Traq":
-            The "Q" visually integrates a location-pin concept —
-            the orange dot beneath the Q represents the pin's tail drop.
-          */}
                     <div className="flex items-baseline gap-0">
                         <span className="text-xl font-bold tracking-tight text-[#F0F6FC]">Tra</span>
                         <span className="relative text-xl font-bold tracking-tight text-[#2F80ED]">
@@ -44,8 +39,8 @@ export default function Topbar({ onMenuToggle, isSidebarOpen }) {
             {/* ── Center: Search Bar ── */}
             <div className="flex-1 max-w-xl mx-auto hidden sm:block">
                 <div className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 ${searchFocused
-                        ? 'bg-[#161B22] border border-[#2F80ED]/60 shadow-[0_0_0_3px_rgba(47,128,237,0.1)]'
-                        : 'bg-[#161B22] border border-[#21262D] hover:border-[#484F58]'
+                    ? 'bg-[#161B22] border border-[#2F80ED]/60 shadow-[0_0_0_3px_rgba(47,128,237,0.1)]'
+                    : 'bg-[#161B22] border border-[#21262D] hover:border-[#484F58]'
                     }`}>
                     <Search size={16} className="text-[#484F58] flex-shrink-0" />
                     <input

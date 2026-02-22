@@ -128,7 +128,7 @@ Simultaneously, the app writes the Ticket ID and route to the **Firebase Realtim
 
 ## 🗺️ Roadmap
 - [ ] NFC Integration for tap-to-verify.
-- [ ] Mobile App (Flutter) for TTE verification.
+- [ ] Mobile App (React) for TTE verification.
 - [ ] AI-based crowd prediction models.
 - [ ] Multi-language support for regional travelers.
 

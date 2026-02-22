@@ -18,18 +18,18 @@ export const TrainDiagram: React.FC<TrainDiagramProps> = ({ coaches }) => {
     });
 
     return (
-        <div className="bg-traq-card rounded-xl p-5 border border-white/10 mb-4">
-            <h3 className="text-white/50 text-xs font-medium uppercase tracking-wider mb-4">
+        <div className="bg-traq-card rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-white/10 mb-2">
+            <h3 className="text-white/50 text-xs font-medium uppercase tracking-wider mb-3 sm:mb-4">
                 Train Overview
             </h3>
 
-            <div className="overflow-x-auto pb-2">
+            <div className="overflow-x-auto pb-2 custom-scrollbar">
                 <div className="flex items-center gap-0 min-w-max">
                     {/* Engine (left) */}
-                    <div className="w-16 h-14 bg-traq-accent rounded-l-xl flex items-center justify-center border border-white/10">
-                        <span className="text-white/40 text-xs font-bold">LOCO</span>
+                    <div className="w-12 sm:w-16 h-12 sm:h-14 bg-traq-accent rounded-l-xl flex items-center justify-center border border-white/10">
+                        <span className="text-white/40 text-[10px] sm:text-xs font-bold">LOCO</span>
                     </div>
-                    <div className="w-3 h-3 bg-white/10 rounded-full -ml-1 z-10" />
+                    <div className="w-2 sm:w-3 h-2 sm:h-3 bg-white/10 rounded-full -ml-1 z-10" />
 
                     {/* Coach blocks */}
                     {sortedCoaches.map((coach, i) => {
@@ -43,13 +43,13 @@ export const TrainDiagram: React.FC<TrainDiagramProps> = ({ coaches }) => {
                             <React.Fragment key={coach.coachId}>
                                 {/* Coupler */}
                                 {i > 0 && (
-                                    <div className="w-2 h-1 bg-white/20 flex-shrink-0" />
+                                    <div className="w-1.5 sm:w-2 h-1 bg-white/20 flex-shrink-0" />
                                 )}
 
                                 {/* Coach block */}
                                 <div
                                     className={`
-                    relative flex-shrink-0 w-20 h-14 rounded-sm flex flex-col
+                    relative flex-shrink-0 w-16 sm:w-20 h-14 sm:h-14 rounded-sm flex flex-col
                     items-center justify-center border transition-all cursor-default
                     ${hasAlert ? 'animate-pulse' : ''}
                   `}
@@ -60,13 +60,13 @@ export const TrainDiagram: React.FC<TrainDiagramProps> = ({ coaches }) => {
                                     title={`${coach.coachId}: ${coach.totalCrowdCount} people, ${coach.ticketedCount} ticketed, ${coach.unticketedCount} unticketed`}
                                 >
                                     <span
-                                        className="font-bold text-sm"
+                                        className="font-bold text-xs sm:text-sm"
                                         style={{ color: alertColor }}
                                     >
                                         {coach.coachId}
                                     </span>
                                     {coach.hasRealData && (
-                                        <span className="text-[9px]" style={{ color: `${alertColor}90` }}>
+                                        <span className="text-[8px] sm:text-[9px]" style={{ color: `${alertColor}90` }}>
                                             {coach.unticketedCount > 0
                                                 ? `${coach.unticketedCount} untkt`
                                                 : '✓ clear'
@@ -76,7 +76,7 @@ export const TrainDiagram: React.FC<TrainDiagramProps> = ({ coaches }) => {
 
                                     {/* Red dot for alerted coaches */}
                                     {hasAlert && (
-                                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-traq-card" />
+                                        <div className="absolute -top-1.5 sm:-top-1 -right-1.5 sm:-right-1 w-2.5 sm:w-3 h-2.5 sm:h-3 bg-red-500 rounded-full border-2 border-traq-card" />
                                     )}
                                 </div>
                             </React.Fragment>
@@ -84,15 +84,15 @@ export const TrainDiagram: React.FC<TrainDiagramProps> = ({ coaches }) => {
                     })}
 
                     {/* Coupler + Engine (right) */}
-                    <div className="w-3 h-3 bg-white/10 rounded-full -mr-1 z-10" />
-                    <div className="w-16 h-14 bg-traq-accent rounded-r-xl flex items-center justify-center border border-white/10">
-                        <span className="text-white/40 text-xs font-bold">EOT</span>
+                    <div className="w-2 sm:w-3 h-2 sm:h-3 bg-white/10 rounded-full -mr-1 z-10" />
+                    <div className="w-12 sm:w-16 h-12 sm:h-14 bg-traq-accent rounded-r-xl flex items-center justify-center border border-white/10">
+                        <span className="text-white/40 text-[10px] sm:text-xs font-bold">EOT</span>
                     </div>
                 </div>
             </div>
 
-            {/* Legend */}
-            <div className="flex items-center gap-4 mt-3 pt-3 border-t border-white/5">
+            {/* Legend: wrap and smaller on mobile */}
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-white/5">
                 <LegendItem color="#4CAF50" label="Clear" />
                 <LegendItem color="#FFC107" label="Moderate" />
                 <LegendItem color="#FF9800" label="High" />
@@ -105,7 +105,7 @@ export const TrainDiagram: React.FC<TrainDiagramProps> = ({ coaches }) => {
 
 const LegendItem: React.FC<{ color: string; label: string }> = ({ color, label }) => (
     <div className="flex items-center gap-1.5">
-        <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
-        <span className="text-white/30 text-[10px]">{label}</span>
+        <div className="w-2.5 sm:w-3 h-2.5 sm:h-3 rounded-sm" style={{ backgroundColor: color }} />
+        <span className="text-white/30 text-[9px] sm:text-[10px]">{label}</span>
     </div>
 );

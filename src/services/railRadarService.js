@@ -2,7 +2,7 @@
 // All requests go through the Vite dev-server proxy (/railradar → https://api.railradar.org/api/v1)
 // so the browser never makes a cross-origin request — no CORS issues.
 
-const RAIL_RADAR_API_KEY = "rr_o7r33nnimx63vzkgyk73r08q6rbwreck";
+const RAIL_RADAR_API_KEY = import.meta.env.VITE_RAIL_RADAR_API_KEY;
 
 // In dev the Vite proxy rewrites /railradar/* → https://api.railradar.org/api/v1/*
 // The API key is still sent as a header so the proxy just forwards it.

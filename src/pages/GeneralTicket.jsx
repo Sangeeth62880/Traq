@@ -15,7 +15,7 @@ import { auth, db } from '../firebase'
 import { getTrainsBetween } from '../services/railRadarService'
 import { fetchTrainCrowdData } from '../services/influxService'
 import { useSensor } from '../context/SensorContext'
-import { writeToCard, isConnected as bleIsConnected } from '../services/bleService'
+import { sendTicketToCard } from '../services/wifiCardService'
 
 // ── Train types with per-passenger base fare ────────────────────────────────
 const TRAIN_TYPES = [
@@ -460,7 +460,7 @@ export default function GeneralTicket() {
     const [bookings, setBookings] = useState([])
     const [justBooked, setJustBooked] = useState(null)
     const [fsLoading, setFsLoading] = useState(false)
-    const [bleWriteStatus, setBleWriteStatus] = useState(null) // null | 'ok' | 'no-device'
+    const [wifiSyncStatus, setWifiSyncStatus] = useState(null) // null | 'ok' | 'error'
 
     useEffect(() => {
         if (!cardUser) { setBookings([]); return }
@@ -520,7 +520,7 @@ export default function GeneralTicket() {
 
         const now = new Date()
         const timestamp = now.toLocaleString('en-IN', { hour12: true, hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })
-        const ticketId = `TRQ${Date.now().toString(36).toUpperCase().slice(-8)}`
+        const ticketId = `TRQ${(Date.now().toString(36) + Math.random().toString(36).slice(2)).toUpperCase().slice(-9)}`
 
         const newBooking = {
             id: ticketId,
@@ -530,6 +530,8 @@ export default function GeneralTicket() {
             trainType,
             from: from.code,
             to: to.code,
+            fromName: from.name?.toLowerCase() || from.code.toLowerCase(),
+            toName: to.name?.toLowerCase() || to.code.toLowerCase(),
             date,
             passengers,
             fare,
@@ -542,31 +544,27 @@ export default function GeneralTicket() {
             const saved = { firestoreId: docRef.id, ...newBooking }
             setBookings(prev => [saved, ...prev])
             setJustBooked(saved)
-            // ── Auto-write ticket ID to BLE card ──────────────────────────────────
-            setBleWriteStatus(null)
-            if (bleIsConnected()) {
-                writeToCard(`TICKET:${ticketId}`)
-                    .then(() => setBleWriteStatus('ok'))
-                    .catch(() => setBleWriteStatus('no-device'))
-            } else {
-                setBleWriteStatus('no-device')
-            }
-            setTimeout(() => setBleWriteStatus(null), 5000)
+
+            // ── Auto-sync ticket ID to card via WiFi ─────────────────────────────
+            setWifiSyncStatus(null)
+            sendTicketToCard(ticketId)
+                .then(() => setWifiSyncStatus('ok'))
+                .catch(() => setWifiSyncStatus('error'))
+
+            setTimeout(() => setWifiSyncStatus(null), 5000)
         } catch (err) {
             console.warn('[GeneralTicket] Firestore save failed, falling back to local:', err.message)
             const local = { firestoreId: null, ...newBooking, createdAt: now.toISOString() }
             setBookings(prev => [local, ...prev])
             setJustBooked(local)
-            // ── Auto-write ticket ID to BLE card (fallback booking) ─────────────
-            setBleWriteStatus(null)
-            if (bleIsConnected()) {
-                writeToCard(`TICKET:${ticketId}`)
-                    .then(() => setBleWriteStatus('ok'))
-                    .catch(() => setBleWriteStatus('no-device'))
-            } else {
-                setBleWriteStatus('no-device')
-            }
-            setTimeout(() => setBleWriteStatus(null), 5000)
+
+            // ── Auto-sync ticket ID to card via WiFi (fallback) ──────────────────
+            setWifiSyncStatus(null)
+            sendTicketToCard(ticketId)
+                .then(() => setWifiSyncStatus('ok'))
+                .catch(() => setWifiSyncStatus('error'))
+
+            setTimeout(() => setWifiSyncStatus(null), 5000)
         } finally {
             setBooking(false)
         }
@@ -831,16 +829,16 @@ export default function GeneralTicket() {
                 </div>
             )}
 
-            {/* ── BLE write status toast ── */}
-            {bleWriteStatus && (
-                <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-medium transition-all animate-in fade-in ${bleWriteStatus === 'ok'
+            {/* ── WiFi sync status toast ── */}
+            {wifiSyncStatus && (
+                <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm font-medium transition-all animate-in fade-in ${wifiSyncStatus === 'ok'
                     ? 'bg-[#238636]/10 border-[#238636]/30 text-[#238636]'
-                    : 'bg-[#F97316]/10 border-[#F97316]/30 text-[#F97316]'
+                    : 'bg-[#DA3633]/10 border-[#DA3633]/30 text-[#DA3633]'
                     }`}>
-                    {bleWriteStatus === 'ok' ? (
-                        <><CheckCircle2 size={15} className="shrink-0" /> Ticket ID written to your railway card via Bluetooth</>
+                    {wifiSyncStatus === 'ok' ? (
+                        <><CheckCircle2 size={15} className="shrink-0" /> Ticket synced to card successfully via WiFi!</>
                     ) : (
-                        <><AlertTriangle size={15} className="shrink-0" /> No BLE card paired — go to &nbsp;<button onClick={() => navigate('/card')} className="underline font-bold">Railway Card</button>&nbsp; to pair and write ticket.
+                        <><AlertTriangle size={15} className="shrink-0" /> Sync failed — ensure you're on 'RAILCARD' WiFi.
                         </>
                     )}
                 </div>

@@ -4,12 +4,18 @@ import {
     CreditCard, Ticket, Star, Shield, Zap,
     QrCode, Hash, ChevronRight, ClipboardList,
     CheckCircle2, Loader2, AlertTriangle, LogOut, ScanLine,
-    Train, ArrowRight, Bluetooth, BluetoothConnected, BluetoothOff, RefreshCw,
+    Wifi, WifiOff, Globe, Signal, Train, ArrowRight,
+    RefreshCw, LogIn,
 } from 'lucide-react'
 import {
-    connectToCard, disconnectCard, isConnected as bleIsConnected,
-    getDeviceName, writeToCard, tryAutoConnect, sendTicketsToCard,
+    sendTicketToCard, checkCardConnection
+} from '../services/wifiCardService'
+import {
+    connectBleDevice, sendTicketViaBle, disconnectBle, isBleConnected
 } from '../services/bleService'
+import {
+    Bluetooth, BluetoothOff, BluetoothConnected
+} from 'lucide-react'
 import {
     GoogleAuthProvider,
     signInWithPopup,
@@ -20,7 +26,8 @@ import {
     doc, setDoc, getDoc, serverTimestamp,
     collection, query, where, orderBy, getDocs,
 } from 'firebase/firestore'
-import { auth, db } from '../firebase'
+import { ref, set } from 'firebase/database'
+import { auth, db, rtdb } from '../firebase'
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // STEP CONSTANTS
@@ -181,15 +188,37 @@ export default function RailwayCard() {
     const [authLoading, setAuthLoading] = useState(false)
     const [authErr, setAuthErr] = useState('')
 
-    // â”€â”€ BLE state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const [bleConnected, setBleConnected] = useState(() => bleIsConnected())
-    const [bleName, setBleName] = useState(() => getDeviceName())
-    const [bleStatus, setBleStatus] = useState('idle')  // idle|auto|connecting|error
+    // ── WiFi/Card Status state ──────────────────────────────────────────────────
+    const [wifiConnected, setWifiConnected] = useState(false)
+    const [wifiStatus, setWifiStatus] = useState('idle') // idle|checking|syncing|error
+    const [wifiErr, setWifiErr] = useState('')
+
+    // ── BLE state ────────────────────────────────────────────────────────────────
+    const [bleConnected, setBleConnected] = useState(false)
+    const [bleStatus, setBleStatus] = useState('idle') // idle|connecting|error
     const [bleErr, setBleErr] = useState('')
 
-    function refreshBleStatus() {
-        setBleConnected(bleIsConnected())
-        setBleName(getDeviceName())
+    // ── BLE test state ────────────────────────────────────────────────────────────
+    const [bleTestId, setBleTestId] = useState('')
+    const [bleTestStatus, setBleTestStatus] = useState('idle') // idle|sending|ok|error
+    const [bleTestErr, setBleTestErr] = useState('')
+
+    // ── Global Sync state ────────────────────────────────────────────────────────
+    const [syncStatus, setSyncStatus] = useState('idle')
+    const [syncErr, setSyncErr] = useState('')
+
+    // ── Generate a random 12-char alphanumeric ID ─────────────────────────────
+    function generateTestId() {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+    }
+
+    async function refreshWifiStatus() {
+        setWifiStatus('checking')
+        const connected = await checkCardConnection()
+        setWifiConnected(connected)
+        setWifiStatus('idle')
+        return connected
     }
 
     // â”€â”€ Tickets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -202,60 +231,120 @@ export default function RailwayCard() {
     const [writingId, setWritingId] = useState(null)
     const [writeResult, setWriteResult] = useState({})
 
-    // â”€â”€ Bulk send â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const [bleSendStatus, setBleSendStatus] = useState('idle')
-    const [bleSendProgress, setBleSendProgress] = useState({ sent: 0, total: 0 })
-    const [bleSendErr, setBleSendErr] = useState('')
 
-    // â”€â”€ Connect to RCARD0000011 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    // ── Bluetooth Connection ──────────────────────────────────────────────────
     async function handleBleConnect() {
         setBleStatus('connecting')
         setBleErr('')
+        setBleTestStatus('idle')
+        setBleTestId('')
+        setBleTestErr('')
         try {
-            const name = await connectToCard({ onDisconnected: () => { refreshBleStatus(); setBleSendStatus('idle') } })
-            setBleName(name)
+            await connectBleDevice()
             setBleConnected(true)
             setBleStatus('idle')
-            // Push tickets immediately after connecting
-            if (tickets.length > 0) setTimeout(() => sendAllTickets(tickets), 400)
         } catch (e) {
             setBleStatus('error')
-            setBleErr(e.message || 'Could not connect to RCARD0000011')
+            setBleErr(e.message || 'Bluetooth connection failed.')
         }
     }
 
-    // â”€â”€ Auto-connect on mount (silent, no picker) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── BLE Test Sync ─────────────────────────────────────────────────────────
+    async function handleTestBleSync() {
+        const testId = generateTestId()
+        setBleTestId(testId)
+        setBleTestStatus('sending')
+        setBleTestErr('')
+        try {
+            await sendTicketViaBle(testId)
+            setBleTestStatus('ok')
+            setBleConnected(false) // ESP32 disconnects after accepting ticket
+        } catch (e) {
+            setBleTestStatus('error')
+            setBleTestErr(e.message || 'Test sync failed.')
+        }
+    }
+
+    async function handleWifiConnect() {
+        setWifiStatus('checking')
+        setWifiErr('')
+        try {
+            const ok = await refreshWifiStatus()
+            if (!ok) throw new Error('Could not reach Railway Card at 192.168.4.1. Are you connected to its WiFi?')
+
+            // If connected and has tickets, sync the latest one
+            if (tickets.length > 0) {
+                setTimeout(() => syncLatestTicket(tickets, 'wifi'), 400)
+            }
+        } catch (e) {
+            setWifiStatus('error')
+            setWifiErr(e.message)
+        }
+    }
+
+    // ── Check connection on mount ──────────────────────────────────────────────
     useEffect(() => {
-        if (!userData || bleIsConnected()) return
-        setBleStatus('auto')
-        tryAutoConnect(() => { refreshBleStatus(); setBleSendStatus('idle') })
-            .then(name => {
-                if (name) {
-                    setBleName(name); setBleConnected(true)
-                    console.info('[BLE] Auto-connected to', name)
-                }
-            })
-            .catch(() => { })
-            .finally(() => setBleStatus('idle'))
+        if (!userData) return
+        refreshWifiStatus()
     }, [userData?.uid])
 
-    // â”€â”€ Send all tickets to RCARD0000011 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    async function sendAllTickets(ticketList) {
+    // ── Write ticket to Firebase Realtime Database ────────────────────────────
+    async function writeTicketToRtdb(ticket) {
+        // Always use the generated ticket ID (TRQ...), never the Firestore document ID
+        const ticketId = ticket.id
+        if (!ticketId) { console.warn('[RTDB] ticket.id missing, skipping write.'); return }
+
+        // Prefer full station names saved at booking time, fall back to codes in lowercase
+        const fromStation = ticket.fromName || ticket.from?.toLowerCase() || null
+        const toStation = ticket.toName || ticket.to?.toLowerCase() || null
+        try {
+            await set(ref(rtdb, `tickets/${ticketId}`), {
+                ticketId,
+                from: fromStation,
+                to: toStation,
+                verified: false,
+            })
+            console.log(`[RTDB] Written: tickets/${ticketId} — ${fromStation} → ${toStation}`)
+        } catch (e) {
+            // Non-fatal — just log it
+            console.warn('[RTDB] Write failed:', e.message)
+        }
+    }
+
+    // ── Sync ticket to card ──────────────────────────────────────────────────
+    async function syncLatestTicket(ticketList, method = 'wifi') {
         const list = ticketList ?? tickets
-        if (!list.length || !bleIsConnected()) {
-            setBleSendStatus('error')
-            setBleSendErr(list.length === 0 ? 'No tickets to send.' : 'Card not connected. Connect first.')
+        if (!list.length) {
+            setSyncStatus('error')
+            setSyncErr('No tickets to sync.')
             return
         }
-        setBleSendStatus('sending')
-        setBleSendProgress({ sent: 0, total: list.length })
-        setBleSendErr('')
+
+        setSyncStatus('sending')
+        setSyncErr('')
         try {
-            await sendTicketsToCard(list, (sent, total) => setBleSendProgress({ sent, total }))
-            setBleSendStatus('done')
+            const latestTicket = list[0]
+            // Use ticket.id (TRQ... format) — NOT firestoreId — so ESP32 and RTDB receive the same ID
+            const ticketId = latestTicket.id
+
+            // ── Fire both operations simultaneously ───────────────────────────
+            const [syncResult] = await Promise.allSettled([
+                method === 'ble' || (!wifiConnected && bleConnected)
+                    ? sendTicketViaBle(ticketId)
+                    : sendTicketToCard(ticketId),
+                writeTicketToRtdb(latestTicket),   // parallel RTDB write
+            ])
+
+            // Only throw if the primary ESP sync failed
+            if (syncResult.status === 'rejected') throw syncResult.reason
+
+            setSyncStatus('done')
+            if (method === 'wifi') setWifiConnected(true)
+            if (method === 'ble') setBleConnected(true)
         } catch (e) {
-            setBleSendStatus('error')
-            setBleSendErr(e.message || 'Failed to send tickets to card.')
+            setSyncStatus('error')
+            setSyncErr(e.message || 'Failed to sync ticket to card.')
         }
     }
 
@@ -293,10 +382,11 @@ export default function RailwayCard() {
     async function handleSignOut() {
         await signOut(auth)
         setUserData(null)
-        disconnectCard()
-        refreshBleStatus()
+        setWifiConnected(false)
+        setBleConnected(false)
+        disconnectBle()
         setTickets([])
-        setBleSendStatus('idle')
+        setSyncStatus('idle')
     }
 
     // â”€â”€ Restore session on mount â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -327,7 +417,10 @@ export default function RailwayCard() {
                 const results = snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }))
                 results.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
                 setTickets(results)
-                if (results.length > 0 && bleIsConnected()) setTimeout(() => sendAllTickets(results), 600)
+                if (results.length > 0) {
+                    // Try to sync if we think we might be connected
+                    syncLatestTicket(results).catch(() => { })
+                }
             })
             .catch(e => setTicketsErr(e.message.includes('index') ? 'Firestore index buildingâ€¦' : 'Failed to load tickets.'))
             .finally(() => setTicketsLoading(false))
@@ -348,28 +441,28 @@ export default function RailwayCard() {
             {/* Header */}
             <div>
                 <h1 className="text-2xl font-bold text-[#F0F6FC] flex items-center gap-2">
-                    <CreditCard size={22} className="text-[#2F80ED]" /> Railway Card
+                    <Wifi size={22} className="text-[#2F80ED]" /> Railway Card
                 </h1>
-                <p className="text-sm text-[#8B949E] mt-1">Sign in to push your ticket data to RCARD0000011 via Bluetooth.</p>
+                <p className="text-sm text-[#8B949E] mt-1">Connect to your card's WiFi to sync your 12-digit ticket ID.</p>
             </div>
 
-            {/* ESP card visual */}
+            {/* WiFi card visual */}
             <div className="bg-[#161B22] border border-[#21262D] rounded-2xl p-6 space-y-4">
                 <div className="flex items-center gap-4 p-4 rounded-xl bg-[#0D1117] border border-[#2F80ED]/20">
                     <div className="w-12 h-12 rounded-xl bg-[#2F80ED]/10 border border-[#2F80ED]/30 flex items-center justify-center shrink-0">
-                        <Bluetooth size={22} className="text-[#2F80ED]" />
+                        <Wifi size={22} className="text-[#2F80ED]" />
                     </div>
                     <div>
                         <p className="text-[10px] font-bold uppercase tracking-widest text-[#484F58]">Railway Card Device</p>
                         <p className="text-sm font-mono font-bold text-[#F0F6FC]">RCARD0000011</p>
-                        <p className="text-[11px] text-[#484F58]">ESP32 BLE â€” ticket store</p>
+                        <p className="text-[11px] text-[#484F58]">WiFi Sync â€” 12-char ID</p>
                     </div>
                     <div className="ml-auto">
                         <span className="text-[10px] font-bold text-[#484F58] bg-[#21262D] px-2 py-0.5 rounded-full">Permanent ID</span>
                     </div>
                 </div>
 
-                <p className="text-xs text-[#484F58] text-center">Sign in with Google â€” tickets in your account will be automatically pushed to this card once connected.</p>
+                <p className="text-xs text-[#484F58] text-center">Sign in with Google â€” your latest ticket ID will be synced to the card via WiFi (192.168.4.1).</p>
 
                 {authErr && (
                     <p className="flex items-center gap-1.5 text-xs text-[#EF4444]">
@@ -434,7 +527,7 @@ export default function RailwayCard() {
                 <span className="text-xs text-[#484F58]">Â· {userData?.name}</span>
             </div>
 
-            {/* â”€â”€ Card Visual â”€â”€ */}
+            {/* ── Card Visual ── */}
             <div className="relative w-full max-w-sm mx-auto sm:mx-0">
                 <div className="relative overflow-hidden rounded-2xl p-6 select-none"
                     style={{
@@ -467,15 +560,21 @@ export default function RailwayCard() {
                             <p className="text-sm font-semibold text-white truncate max-w-[140px]">{userData?.name}</p>
                         </div>
                         <div className="text-right">
-                            <p className="text-xs text-blue-200/50">BLE Status</p>
-                            <p className={`text-sm font-bold ${bleConnected ? 'text-green-300' : 'text-blue-200/50'}`}>
-                                {bleConnected ? 'â— Connected' : 'â—‹ Not paired'}
-                            </p>
+                            <p className="text-xs text-blue-200/50">Card Status</p>
+                            <div className="flex flex-col items-end">
+                                <p className={`text-[10px] font-bold ${wifiConnected ? 'text-green-400' : 'text-blue-200/30'}`}>
+                                    {wifiConnected ? '● WiFi Connected' : '○ WiFi Off'}
+                                </p>
+                                <p className={`text-[10px] font-bold ${bleConnected ? 'text-blue-400' : 'text-blue-200/30'}`}>
+                                    {bleConnected ? '● BLE Connected' : '○ BLE Off'}
+                                </p>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="absolute top-6 right-6">
-                        <Bluetooth size={28} className="text-blue-100/20" />
+                    <div className="absolute top-6 right-6 flex gap-2">
+                        <Wifi size={24} className={wifiConnected ? 'text-green-400/40' : 'text-blue-100/10'} />
+                        <Bluetooth size={24} className={bleConnected ? 'text-blue-400/40' : 'text-blue-100/10'} />
                     </div>
                 </div>
             </div>
@@ -580,7 +679,7 @@ export default function RailwayCard() {
                                         )}
                                         {wStatus === 'err' && (
                                             <span className="flex items-center gap-1 text-[11px] text-[#EF4444]">
-                                                <AlertTriangle size={12} /> Write failed â€” connect card first
+                                                <AlertTriangle size={12} /> Sync failed â€” check WiFi connection
                                             </span>
                                         )}
                                         <button
@@ -589,21 +688,22 @@ export default function RailwayCard() {
                                                 setWritingId(tId)
                                                 setWriteResult(prev => ({ ...prev, [tId]: undefined }))
                                                 try {
-                                                    await writeToCard(`TRAQ:TKT:${tId}`)
+                                                    await sendTicketToCard(tId)
                                                     setWriteResult(prev => ({ ...prev, [tId]: 'ok' }))
+                                                    setWifiConnected(true)
                                                 } catch {
                                                     setWriteResult(prev => ({ ...prev, [tId]: 'err' }))
                                                 } finally {
                                                     setWritingId(null)
                                                 }
                                             }}
-                                            className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all ${bleConnected
+                                            className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-all ${wifiConnected
                                                 ? 'border-[#2F80ED]/40 text-[#2F80ED] hover:bg-[#2F80ED]/10'
-                                                : 'border-[#21262D] text-[#484F58] cursor-not-allowed opacity-50'
+                                                : 'border-[#21262D] text-[#484F58] hover:border-[#2F80ED]/30'
                                                 }`}>
                                             {writingId === tId
-                                                ? <><Loader2 size={11} className="animate-spin" /> Writingâ€¦</>
-                                                : <><BluetoothConnected size={11} /> Write to Card</>}
+                                                ? <><Loader2 size={11} className="animate-spin" /> Syncingâ€¦</>
+                                                : <><Wifi size={11} /> Sync to Card</>}
                                         </button>
                                     </div>
                                 </div>
@@ -613,106 +713,118 @@ export default function RailwayCard() {
                 </div>
             )}
 
-            {/* â”€â”€ RCARD0000011 Bluetooth Panel â”€â”€ */}
-            <div className="bg-[#161B22] border border-[#21262D] rounded-xl p-5 space-y-4">
+            {/* ── Card Connection Panel ────────────────────────────────────────── */}
+            <div className="bg-[#161B22] border border-[#21262D] rounded-xl p-5 space-y-5">
                 <div className="flex items-center justify-between">
                     <h2 className="text-sm font-bold text-[#F0F6FC] flex items-center gap-2">
-                        <Bluetooth size={15} className="text-[#2F80ED]" /> RCARD0000011
+                        <Zap size={15} className="text-[#2F80ED]" /> Sync Methods
                     </h2>
-                    {bleStatus === 'auto' && (
-                        <span className="flex items-center gap-1.5 text-[10px] text-[#484F58]">
-                            <Loader2 size={11} className="animate-spin" /> Auto-connectingâ€¦
-                        </span>
-                    )}
-                    {bleConnected && bleStatus !== 'auto' && (
+                    {(wifiConnected || bleConnected) && (
                         <span className="flex items-center gap-1.5 text-[10px] font-bold text-[#238636] bg-[#238636]/10 border border-[#238636]/25 px-2 py-0.5 rounded-full">
-                            <BluetoothConnected size={11} /> CONNECTED
+                            <Signal size={11} /> CARD REACHABLE
                         </span>
                     )}
                 </div>
 
-                {bleConnected ? (
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#238636]/8 border border-[#238636]/30">
-                            <BluetoothConnected size={18} className="text-[#238636] shrink-0" />
+                <div className="grid sm:grid-cols-2 gap-4">
+                    {/* WiFi Method */}
+                    <div className={`p-4 rounded-xl border transition-all duration-300 ${wifiConnected ? 'bg-[#238636]/5 border-[#238636]/20' : 'bg-[#0D1117] border-[#21262D]'}`}>
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${wifiConnected ? 'bg-[#238636]/10 text-[#238636]' : 'bg-[#21262D] text-[#484F58]'}`}>
+                                <Wifi size={20} />
+                            </div>
                             <div className="flex-1 min-w-0">
-                                <p className="text-xs font-bold text-[#238636]">Paired</p>
-                                <p className="text-[11px] text-[#8B949E] font-mono">{bleName || 'RCARD0000011'}</p>
+                                <p className="text-[10px] font-bold text-[#484F58] uppercase">WiFi Hook</p>
+                                <p className="text-xs font-bold text-[#F0F6FC] truncate">192.168.4.1</p>
                             </div>
-                            <button
-                                onClick={() => { disconnectCard(); refreshBleStatus(); setBleSendStatus('idle') }}
-                                className="text-[10px] text-[#484F58] hover:text-[#DA3633] border border-[#21262D] hover:border-[#DA3633]/40 px-2 py-1.5 rounded-lg transition-all flex items-center gap-1">
-                                <BluetoothOff size={11} /> Disconnect
-                            </button>
-                        </div>
-
-                        {bleSendStatus === 'sending' && (
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[11px]">
-                                    <span className="flex items-center gap-1.5 text-[#2F80ED]">
-                                        <Loader2 size={11} className="animate-spin" />
-                                        Sending tickets to RCARD0000011â€¦
-                                    </span>
-                                    <span className="text-[#8B949E] font-mono">{bleSendProgress.sent}/{bleSendProgress.total}</span>
-                                </div>
-                                <div className="w-full bg-[#21262D] rounded-full h-1.5 overflow-hidden">
-                                    <div className="h-full bg-[#2F80ED] rounded-full transition-all duration-300"
-                                        style={{ width: bleSendProgress.total ? `${(bleSendProgress.sent / bleSendProgress.total) * 100}%` : '0%' }} />
-                                </div>
-                            </div>
-                        )}
-
-                        {bleSendStatus === 'done' && (
-                            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#238636]/8 border border-[#238636]/25">
-                                <CheckCircle2 size={14} className="text-[#238636] shrink-0" />
-                                <p className="text-[11px] text-[#238636] font-medium">
-                                    {bleSendProgress.total} ticket{bleSendProgress.total !== 1 ? 's' : ''} written to RCARD0000011
-                                </p>
-                            </div>
-                        )}
-
-                        {bleSendStatus === 'error' && bleSendErr && (
-                            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#DA3633]/8 border border-[#DA3633]/25">
-                                <AlertTriangle size={13} className="text-[#DA3633] shrink-0" />
-                                <p className="text-[11px] text-[#DA3633]">{bleSendErr}</p>
-                            </div>
-                        )}
-
-                        {tickets.length > 0 && bleSendStatus !== 'sending' && (
-                            <button
-                                onClick={() => sendAllTickets()}
-                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#2F80ED]/30 bg-[#2F80ED]/8 hover:bg-[#2F80ED]/15 hover:border-[#2F80ED]/60 text-[#2F80ED] text-xs font-bold transition-all">
-                                <RefreshCw size={12} />
-                                {bleSendStatus === 'done' ? 'Re-send All Tickets' : `Send ${tickets.length} Ticket${tickets.length !== 1 ? 's' : ''} to Card`}
-                            </button>
-                        )}
-
-                        {tickets.length === 0 && bleSendStatus === 'idle' && (
-                            <p className="text-[11px] text-[#484F58]">No booked tickets yet. Ticket data will be pushed automatically after your first booking.</p>
-                        )}
-                    </div>
-                ) : (
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#0D1117] border border-[#21262D]">
-                            <BluetoothOff size={18} className="text-[#484F58] shrink-0" />
-                            <div className="flex-1">
-                                <p className="text-xs font-bold text-[#484F58]">RCARD0000011 not connected</p>
-                                <p className="text-[11px] text-[#484F58]">Click below to connect. Browser will show a picker â€” select RCARD0000011. After the first connection, it reconnects silently.</p>
-                            </div>
+                            {wifiStatus === 'checking' && <Loader2 size={12} className="animate-spin text-[#484F58]" />}
                         </div>
                         <button
-                            onClick={handleBleConnect}
-                            disabled={bleStatus === 'connecting'}
-                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#2F80ED]/30 bg-[#2F80ED]/8 hover:bg-[#2F80ED]/15 hover:border-[#2F80ED]/60 text-[#2F80ED] text-sm font-bold transition-all disabled:opacity-50">
-                            {bleStatus === 'connecting'
-                                ? <><Loader2 size={14} className="animate-spin" /> Connectingâ€¦</>
-                                : <><Bluetooth size={14} /> Connect to RCARD0000011</>}
+                            onClick={handleWifiConnect}
+                            disabled={wifiStatus === 'checking'}
+                            className="w-full py-2 rounded-lg border border-[#2F80ED]/30 bg-[#2F80ED]/5 hover:bg-[#2F80ED]/10 text-[#2F80ED] text-[11px] font-bold transition-all">
+                            Check WiFi
                         </button>
-                        {bleStatus === 'error' && bleErr && (
-                            <p className="flex items-center gap-1.5 text-xs text-[#EF4444]">
-                                <AlertTriangle size={11} className="shrink-0" />{bleErr}
-                            </p>
+                    </div>
+
+                    {/* Bluetooth Method */}
+                    <div className={`p-4 rounded-xl border transition-all duration-300 space-y-3 ${syncStatus === 'done' ? 'bg-[#238636]/5 border-[#238636]/20' :
+                        bleConnected ? 'bg-[#2F80ED]/5 border-[#2F80ED]/20' :
+                            'bg-[#0D1117] border-[#21262D]'}`}>
+
+                        <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${syncStatus === 'done' && bleConnected === false ? 'bg-[#238636]/10 text-[#238636]' :
+                                bleConnected ? 'bg-[#2F80ED]/10 text-[#2F80ED]' :
+                                    'bg-[#21262D] text-[#484F58]'}`}>
+                                <Bluetooth size={20} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-[10px] font-bold text-[#484F58] uppercase">Bluetooth LE</p>
+                                <p className="text-xs font-bold text-[#F0F6FC] truncate">RAILCARD · RCARD0000011</p>
+                            </div>
+                            {bleStatus === 'connecting' && <Loader2 size={12} className="animate-spin text-[#484F58]" />}
+                            {syncStatus === 'sending' && <Loader2 size={12} className="animate-spin text-[#2F80ED]" />}
+                        </div>
+
+                        {/* Pair button */}
+                        <button
+                            onClick={handleBleConnect}
+                            disabled={bleStatus === 'connecting' || syncStatus === 'sending'}
+                            className="w-full py-2 rounded-lg border border-[#2F80ED]/30 bg-[#2F80ED]/5 hover:bg-[#2F80ED]/10 text-[#2F80ED] text-[11px] font-bold transition-all disabled:opacity-50">
+                            {bleStatus === 'connecting' ? 'Pairing…' : bleConnected ? '↺ Re-pair Bluetooth' : 'Pair Bluetooth'}
+                        </button>
+
+                        {/* Sync via BLE — shown after pairing, syncs ticket to ESP32 + RTDB simultaneously */}
+                        {bleConnected && tickets.length > 0 && (
+                            <button
+                                onClick={() => syncLatestTicket(null, 'ble')}
+                                disabled={syncStatus === 'sending'}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-[#2F80ED] hover:bg-[#2F80ED]/80 text-white text-[11px] font-bold transition-all disabled:opacity-50">
+                                {syncStatus === 'sending'
+                                    ? <><Loader2 size={12} className="animate-spin" /> Syncing to ESP &amp; DB…</>
+                                    : <><BluetoothConnected size={12} /> Sync via Bluetooth</>}
+                            </button>
                         )}
+
+                        {bleErr && (
+                            <div className="rounded-lg bg-[#DA3633]/8 border border-[#DA3633]/25 px-3 py-2 flex items-start gap-2">
+                                <AlertTriangle size={12} className="text-[#DA3633] shrink-0 mt-0.5" />
+                                <p className="text-[11px] text-[#DA3633]">{bleErr}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {(wifiErr || bleErr) && (
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#DA3633]/8 border border-[#DA3633]/25">
+                        <AlertTriangle size={13} className="text-[#DA3633] shrink-0" />
+                        <p className="text-[11px] text-[#DA3633]">{wifiErr || bleErr}</p>
+                    </div>
+                )}
+
+                {tickets.length > 0 && (
+                    <div className="flex gap-2 pt-2">
+                        <button
+                            onClick={() => syncLatestTicket()}
+                            disabled={syncStatus === 'sending'}
+                            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-[#2F80ED] hover:bg-[#2F80ED]/80 text-white text-sm font-bold transition-all disabled:opacity-50">
+                            {syncStatus === 'sending' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                            Sync Latest via WiFi
+                        </button>
+                        <button
+                            onClick={() => syncLatestTicket(null, 'ble')}
+                            disabled={syncStatus === 'sending'}
+                            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-[#0D1117] border border-[#2F80ED]/40 hover:border-[#2F80ED] text-[#2F80ED] text-sm font-bold transition-all disabled:opacity-50">
+                            {syncStatus === 'sending' ? <Loader2 size={14} className="animate-spin" /> : <BluetoothConnected size={14} />}
+                            Sync via Bluetooth
+                        </button>
+                    </div>
+                )}
+
+                {syncStatus === 'done' && (
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#238636]/8 border border-[#238636]/25 animate-in fade-in slide-in-from-top-2">
+                        <CheckCircle2 size={14} className="text-[#238636] shrink-0" />
+                        <p className="text-[11px] text-[#238636] font-medium">Ticket ID successfully synced to card!</p>
                     </div>
                 )}
             </div>

@@ -498,7 +498,7 @@ export default function BookTicket() {
     // ── Book general ticket ───────────────────────────────────────────────────
     const handleBookGeneralTicket = (train) => {
         const booking = {
-            id: Math.random().toString(36).substr(2, 9),
+            id: (Date.now().toString(36) + Math.random().toString(36).slice(2)).toUpperCase().slice(-12),
             trainNumber: train.trainNumber,
             trainName: train.trainName,
             from: train.sourceStationCode || fromStation.toUpperCase(),

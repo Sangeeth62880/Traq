@@ -1,7 +1,7 @@
 // rapidRailService.js
 // Fetch real train details from Rapid Rail API
 
-const RAPID_RAIL_API_KEY = "rr_o7r33nnimx63vzkgyk73r08q6rbwreck";
+const RAPID_RAIL_API_KEY = import.meta.env.VITE_RAIL_RADAR_API_KEY;
 const RAPID_RAIL_BASE_URL = "https://rapidrail.in/api/v1";
 
 /**

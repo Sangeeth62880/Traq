@@ -22,10 +22,10 @@
 import { sensorData } from '../data/sensorData'
 
 // ── Connection constants ──────────────────────────────────────────────────────
-const INFLUX_URL = 'https://us-east-1-1.aws.cloud2.influxdata.com'
-const INFLUX_ORG = '1537318cd43c7ef4'
-const INFLUX_TOKEN = 'W1yj6PRq_6q7tCkVL9EBUvRNYa0OSI8lJ-ngRGJSMTSsyHvSQAvobQ0jWSroPC4wRI4LiY47LGjND4BWpvi8Aw=='
-const BUCKET = 'density-reading'
+const INFLUX_URL = import.meta.env.VITE_INFLUX_URL
+const INFLUX_ORG = import.meta.env.VITE_INFLUX_ORG
+const INFLUX_TOKEN = import.meta.env.VITE_INFLUX_TOKEN
+const BUCKET = import.meta.env.VITE_INFLUX_BUCKET
 const QUERY_URL = `${INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}`
 
 // ── Boarding status from occupancy ratio ──────────────────────────────────────
